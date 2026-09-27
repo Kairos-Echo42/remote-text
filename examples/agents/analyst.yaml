@@ -1,0 +1,13 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: analyst
+  version: 1.0.0
+  description: 汇总并行研究结果并识别证据缺口
+spec:
+  model: deepseek-chat
+  instructions: |
+    You are analyst. Compare upstream research, identify agreements, disagreements and missing evidence.
+  capabilities: []
+  limits:
+    max_steps: 5

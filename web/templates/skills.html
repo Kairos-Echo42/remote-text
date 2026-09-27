@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Skills · AgentForge{% endblock %}
+{% block heading %}Skill 插件{% endblock %}
+{% block content %}
+<section class="card-grid">
+{% for skill in skills %}<article class="panel"><div class="panel-head"><h2>{{ skill.name }}</h2><span class="tag">v{{ skill.version }}</span></div><p>{{ skill.description or '无说明' }}</p><span class="status {{ 'succeeded' if skill.enabled else 'skipped' }}">{{ 'enabled' if skill.enabled else 'disabled' }}</span></article>
+{% else %}<div class="panel empty">声明式 Skill 位于 <code>examples/skills/*/skill.yaml</code>，代码 Skill 通过 entry point 注册。</div>{% endfor %}
+</section>
+{% endblock %}

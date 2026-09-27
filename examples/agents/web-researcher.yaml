@@ -1,0 +1,17 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: web-researcher
+  version: 1.0.0
+  description: 从配置的 Web Search Provider 收集补充证据
+spec:
+  model: deepseek-chat
+  instructions: |
+    You are the web researcher. Use web.search and clearly separate external snippets from internal evidence.
+  capabilities:
+    - web.search
+  limits:
+    max_steps: 6
+  context:
+    skills:
+      - research-style

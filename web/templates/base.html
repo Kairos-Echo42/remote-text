@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}AgentForge{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/vendor/htmx.min.js"></script>
+  <script defer src="/static/vendor/alpine.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/app"><span class="brand-mark">AF</span><span>AgentForge</span></a>
+      <nav>
+        <a href="/app" class="{{ 'active' if current_path == '/app' else '' }}">总览</a>
+        <a href="/app/workbench" class="{{ 'active' if current_path.startswith('/app/workbench') else '' }}">任务工作台</a>
+        <a href="/app/runs" class="{{ 'active' if current_path.startswith('/app/runs') else '' }}">运行中心</a>
+        <a href="/app/workflows" class="{{ 'active' if current_path.startswith('/app/workflows') else '' }}">工作流</a>
+        <a href="/app/agents" class="{{ 'active' if current_path.startswith('/app/agents') else '' }}">Agents</a>
+        <a href="/app/knowledge" class="{{ 'active' if current_path.startswith('/app/knowledge') else '' }}">知识库</a>
+        <a href="/app/memory" class="{{ 'active' if current_path.startswith('/app/memory') else '' }}">Memory</a>
+        <a href="/app/models" class="{{ 'active' if current_path.startswith('/app/models') else '' }}">模型</a>
+        <a href="/app/mcp" class="{{ 'active' if current_path.startswith('/app/mcp') else '' }}">MCP</a>
+        <a href="/app/skills" class="{{ 'active' if current_path.startswith('/app/skills') else '' }}">Skills</a>
+        <a href="/app/settings" class="{{ 'active' if current_path.startswith('/app/settings') else '' }}">设置</a>
+      </nav>
+      <form method="post" action="/logout" class="logout-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn ghost full" type="submit">退出登录</button>
+      </form>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Async Multi-Agent Runtime</p>
+          <h1>{% block heading %}AgentForge{% endblock %}</h1>
+        </div>
+        {% block actions %}{% endblock %}
+      </header>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script>
+    window.AgentForge = {
+      csrf: document.querySelector('meta[name="csrf-token"]')?.content,
+      notify(message) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.add('visible');
+        setTimeout(() => toast.classList.remove('visible'), 2600);
+      }
+    };
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

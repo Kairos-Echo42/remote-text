@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}工作流 · AgentForge{% endblock %}
+{% block heading %}工作流{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>已同步定义</h2><span class="muted">代码仓库为唯一真源</span></div>
+  <table>
+    <thead><tr><th>名称</th><th>最新版本</th><th>说明</th><th>校验和</th></tr></thead>
+    <tbody>{% for workflow in workflows %}
+      <tr><td><strong>{{ workflow.name }}</strong></td><td>{{ workflow.latest_version or '—' }}</td><td>{{ workflow.description or '—' }}</td><td class="mono truncate">{{ workflow.source_hash or '—' }}</td></tr>
+    {% else %}<tr><td colspan="4"><div class="empty">运行 <code>agentforge sync</code> 同步示例工作流。</div></td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>不可变版本</h2></div>
+  <details class="version-list">{% for version in versions %}
+    <summary><span>{{ version.definition.metadata.name }}</span><span>{{ version.version }}</span><span class="mono">{{ version.checksum[:12] }}</span></summary>
+    <pre>{{ version.definition | tojson(indent=2) }}</pre>
+  {% else %}<div class="empty">暂无版本。</div>{% endfor %}</details>
+</section>
+{% endblock %}

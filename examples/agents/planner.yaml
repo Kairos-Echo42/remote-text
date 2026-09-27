@@ -1,0 +1,16 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: planner
+  version: 1.0.0
+  description: 将复杂问题拆解为可执行研究步骤
+spec:
+  model: deepseek-chat
+  instructions: |
+    You are planner. Produce a concise research plan with dependencies and evidence needs.
+  capabilities: []
+  limits:
+    max_steps: 4
+  context:
+    skills:
+      - research-style

@@ -1,0 +1,110 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: agentforge
+      POSTGRES_USER: agentforge
+      POSTGRES_PASSWORD: agentforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentforge -d agentforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      AGENTFORGE_DATABASE_URL: postgresql+asyncpg://agentforge:agentforge@postgres:5432/agentforge
+      AGENTFORGE_REDIS_URL: redis://redis:6379/0
+      AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
+      AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    build: .
+    command: ["uvicorn", "agentforge.gateway.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    environment:
+      AGENTFORGE_DATABASE_URL: postgresql+asyncpg://agentforge:agentforge@postgres:5432/agentforge
+      AGENTFORGE_REDIS_URL: redis://redis:6379/0
+      AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
+      AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    command: ["agentforge", "worker"]
+    env_file: .env
+    environment:
+      AGENTFORGE_DATABASE_URL: postgresql+asyncpg://agentforge:agentforge@postgres:5432/agentforge
+      AGENTFORGE_REDIS_URL: redis://redis:6379/0
+      AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
+      AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 2
+
+  scheduler:
+    build: .
+    command: ["agentforge", "scheduler"]
+    env_file: .env
+    environment:
+      AGENTFORGE_DATABASE_URL: postgresql+asyncpg://agentforge:agentforge@postgres:5432/agentforge
+      AGENTFORGE_REDIS_URL: redis://redis:6379/0
+      AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
+      AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
+  redis_data:

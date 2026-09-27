@@ -1,0 +1,18 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: repository-researcher
+  version: 1.0.0
+  description: 从工作区知识库检索证据
+spec:
+  model: deepseek-chat
+  instructions: |
+    You are the repository researcher. Use knowledge.search to retrieve source-backed evidence.
+    Preserve citation markers in the final output.
+  capabilities:
+    - knowledge.search
+  limits:
+    max_steps: 6
+  context:
+    skills:
+      - research-style

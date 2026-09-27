@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}MCP · AgentForge{% endblock %}
+{% block heading %}MCP Servers{% endblock %}
+{% block content %}
+<div class="split">
+<section class="panel grow">
+<table><thead><tr><th>名称</th><th>Transport</th><th>Endpoint / Command</th><th>状态</th><th>工具缓存</th></tr></thead><tbody>
+{% for server in servers %}<tr><td>{{ server.name }}</td><td>{{ server.transport }}</td><td class="mono truncate">{{ server.endpoint or server.command|join(' ') }}</td><td><span class="status {{ 'succeeded' if server.enabled else 'skipped' }}">{{ 'enabled' if server.enabled else 'disabled' }}</span></td><td>{{ server.tool_cache|length }}</td></tr>
+{% else %}<tr><td colspan="5"><div class="empty">尚未配置 MCP Server。</div></td></tr>{% endfor %}
+</tbody></table>
+</section>
+<aside class="panel narrow">
+<h2>新增 MCP Server</h2>
+<form method="post" action="/app/mcp" class="stack">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>名称<input name="name" required></label>
+<label>Transport<select name="transport"><option value="streamable_http">Streamable HTTP</option><option value="stdio">stdio</option></select></label>
+<label>HTTP Endpoint<input name="endpoint" placeholder="http://mcp-server:8000/mcp"></label>
+<label>stdio Command<input name="command" placeholder="python -m my_mcp_server"></label>
+<button class="btn primary" type="submit">保存</button>
+</form>
+</aside>
+</div>
+{% endblock %}

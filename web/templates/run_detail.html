@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}运行 {{ run.id }} · AgentForge{% endblock %}
+{% block heading %}运行详情{% endblock %}
+{% block actions %}
+<div class="action-row">
+  {% if run.status == 'running' %}
+  <form method="post" action="/app/runs/{{ run.id }}/pause"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">暂停</button></form>
+  {% endif %}
+  {% if run.status == 'paused' %}
+  <form method="post" action="/app/runs/{{ run.id }}/resume"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn primary" type="submit">恢复</button></form>
+  {% endif %}
+  {% if run.status not in ['succeeded','failed','cancelled'] %}
+  <form method="post" action="/app/runs/{{ run.id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn danger" type="submit">取消</button></form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block head %}<script src="/static/vendor/cytoscape.min.js"></script>{% endblock %}
+{% block content %}
+<section class="run-header panel">
+  <div>
+    <span class="status {{ run.status }}" id="run-status">{{ run.status }}</span>
+    <p class="mono">{{ run.id }}</p>
+  </div>
+  <dl>
+    <div><dt>工作流</dt><dd>{{ version.definition.metadata.name }} · {{ version.version }}</dd></div>
+    <div><dt>事件序号</dt><dd id="event-seq">{{ run.last_event_seq }}</dd></div>
+    <div><dt>开始</dt><dd>{{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else '—' }}</dd></div>
+  </dl>
+</section>
+<div class="run-grid">
+  <section class="panel graph-panel">
+    <div class="panel-head"><h2>DAG 状态</h2><span class="muted" id="node-count">{{ nodes|length }} nodes</span></div>
+    <div id="dag"></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>实时事件</h2><span class="live-dot">LIVE</span></div>
+    <ol class="event-stream" id="event-stream"></ol>
+  </section>
+</div>
+<section class="panel">
+  <div class="panel-head"><h2>节点</h2></div>
+  <table>
+    <thead><tr><th>节点</th><th>类型</th><th>尝试</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead>
+    <tbody>
+      {% for node in nodes %}
+      <tr>
+        <td class="mono">{{ node.node_id }}</td><td>{{ node.node_type }}</td><td>{{ node.attempt }}</td>
+        <td><span class="status {{ node.status }}">{{ node.status }}</span></td>
+        <td>{{ ((node.finished_at - node.started_at).total_seconds()|round(2)) if node.started_at and node.finished_at else '—' }}</td>
+        <td class="truncate">{{ node.error or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>产物</h2></div>
+  <div class="artifact-grid">
+    {% for artifact in artifacts %}
+    <a class="artifact" href="/api/v1/artifacts/{{ artifact.id }}">
+      <strong>{{ artifact.name }}</strong><span>{{ artifact.content_type }} · {{ artifact.size }} bytes</span>
+    </a>
+    {% else %}<div class="empty">运行产生文件后会显示在这里。</div>{% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const initialState = {{ nodes | map(attribute='status') | list | tojson }};
+const nodeData = {{ nodes | map(attribute='node_id') | list | tojson }};
+const definition = {{ version.definition | tojson }};
+const statusColors = {pending:'#64748b',ready:'#0ea5e9',running:'#f59e0b',retry_wait:'#f97316',paused:'#8b5cf6',succeeded:'#22c55e',failed:'#ef4444',skipped:'#475569',cancelled:'#7f1d1d'};
+const elements = [];
+for (const node of definition.spec.nodes) {
+  const idx = nodeData.indexOf(node.id);
+  const status = idx >= 0 ? initialState[idx] : 'pending';
+  elements.push({data:{id:node.id,label:node.id,status:status,color:statusColors[status] || '#64748b'}});
+}
+for (const edge of (definition.spec.edges || [])) elements.push({data:{id:`${edge.source}-${edge.target}`,source:edge.source,target:edge.target}});
+for (const node of definition.spec.nodes) for (const dep of (node.needs || [])) elements.push({data:{id:`${dep}-${node.id}`,source:dep,target:node.id}});
+const cy = cytoscape({container:document.getElementById('dag'),elements:elements,style:[
+ {selector:'node',style:{'label':'data(label)','background-color':'data(color)','color':'#e2e8f0','font-size':11,'text-valign':'center','text-halign':'center','width':96,'height':38,'shape':'round-rectangle','border-width':1,'border-color':'#334155'}},
+ {selector:'edge',style:{'width':1.5,'line-color':'#334155','target-arrow-color':'#334155','target-arrow-shape':'triangle','curve-style':'bezier'}}
+],layout:{name:'breadthfirst',directed:true,spacingFactor:1.2,padding:18}});
+function esc(value){const d=document.createElement('div');d.textContent=value;return d.innerHTML;}
+const stream = document.getElementById('event-stream');
+function appendEvent(data){
+ const li=document.createElement('li');
+ li.innerHTML=`<span class="event-seq">#${data.seq}</span><div><strong>${esc(data.type)}</strong><p>${esc(JSON.stringify(data.payload))}</p></div>`;
+ stream.prepend(li);
+ document.getElementById('event-seq').textContent=data.seq;
+ if(data.node_run_id){ /* node status is refreshed on reload */ }
+ if(['run.succeeded','run.failed','run.cancelled'].includes(data.type)){
+   const s=document.getElementById('run-status'); s.textContent=data.type.replace('run.',''); s.className='status '+s.textContent;
+ }
+}
+const source=new EventSource('/api/v1/runs/{{ run.id }}/events?after=0');
+source.onmessage=(event)=>{try{appendEvent(JSON.parse(event.data))}catch(e){}};
+['run.started','node.ready','node.started','node.succeeded','node.failed','tool.started','tool.succeeded','run.succeeded','run.failed','run.cancelled'].forEach(type=>{
+ source.addEventListener(type, e=>{try{appendEvent(JSON.parse(e.data))}catch(err){}});
+});
+</script>
+{% endblock %}

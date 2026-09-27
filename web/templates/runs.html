@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}运行中心 · AgentForge{% endblock %}
+{% block heading %}运行中心{% endblock %}
+{% block content %}
+<section class="panel">
+  <form method="get" class="filters">
+    <select name="status_filter" onchange="this.form.submit()">
+      <option value="">全部状态</option>
+      {% for state in ['queued','running','paused','succeeded','failed','cancelled','cancelling'] %}
+      <option value="{{ state }}" {{ 'selected' if status_filter == state else '' }}>{{ state }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% if runs %}
+  <table>
+    <thead><tr><th>运行 ID</th><th>状态</th><th>错误</th><th>开始</th><th>结束</th></tr></thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td><a class="mono" href="/app/runs/{{ run.id }}">{{ run.id }}</a></td>
+        <td><span class="status {{ run.status }}">{{ run.status }}</span></td>
+        <td class="truncate">{{ run.error or '—' }}</td>
+        <td>{{ run.started_at.strftime('%m-%d %H:%M:%S') if run.started_at else '—' }}</td>
+        <td>{{ run.finished_at.strftime('%m-%d %H:%M:%S') if run.finished_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">没有符合筛选条件的运行。</div>{% endif %}
+</section>
+{% endblock %}

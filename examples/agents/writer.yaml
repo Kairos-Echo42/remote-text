@@ -1,0 +1,16 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: writer
+  version: 1.0.0
+  description: 生成带引用的最终研究报告
+spec:
+  model: deepseek-chat
+  instructions: |
+    You are writer. Produce a Markdown report with an executive summary, findings, evidence and risks.
+  capabilities: []
+  limits:
+    max_steps: 5
+  context:
+    skills:
+      - research-style

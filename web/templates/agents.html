@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Agents · AgentForge{% endblock %}
+{% block heading %}Agents{% endblock %}
+{% block content %}
+<section class="card-grid">
+  {% for agent in agents %}
+  <article class="panel agent-card">
+    <div class="panel-head"><h2>{{ agent.name }}</h2><span class="tag">v{{ agent.version }}</span></div>
+    <p>{{ agent.description or '暂无说明' }}</p>
+    <div class="tag-row">{% for capability in agent.capabilities %}<span class="tag">{{ capability }}</span>{% else %}<span class="muted">无外部能力</span>{% endfor %}</div>
+    <small>Max steps: {{ agent.limits.get('max_steps', 12) }}</small>
+  </article>
+  {% else %}<div class="panel empty">运行 <code>agentforge sync</code> 导入 Agent 定义。</div>{% endfor %}
+</section>
+{% endblock %}

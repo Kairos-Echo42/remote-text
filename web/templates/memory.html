@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Memory · AgentForge{% endblock %}
+{% block heading %}长期 Memory{% endblock %}
+{% block content %}
+<section class="panel">
+  <form method="post" action="/app/memory" class="inline-create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="content" placeholder="显式写入一条长期记忆..." required>
+    <button class="btn primary" type="submit">保存记忆</button>
+  </form>
+</section>
+<section class="memory-list">
+  {% for record in records %}
+  <article class="panel memory-card" x-data="{ editing: false }">
+    <div><span class="tag">{{ record.kind }}</span><span class="tag">{{ record.scope }}</span><span class="tag">confidence {{ record.confidence }}</span></div>
+    <p x-show="!editing">{{ record.content }}</p>
+    <form x-show="editing" method="post" action="/app/memory/{{ record.id }}/update" class="stack" style="display:none">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <textarea name="content" rows="4" required>{{ record.content }}</textarea>
+      <button class="btn primary" type="submit">保存修改</button>
+    </form>
+    <div class="panel-head"><small>{{ record.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+      <div class="action-row">
+        <button class="link" type="button" @click="editing = !editing" x-text="editing ? '取消' : '编辑'"></button>
+        <form method="post" action="/app/memory/{{ record.id }}/delete"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link danger-text" type="submit">删除</button></form>
+      </div>
+    </div>
+  </article>
+  {% else %}<div class="panel empty">运行结束后会自动提取可审阅的长期记忆。</div>{% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,88 @@
+apiVersion: agentforge/v1
+kind: Workflow
+metadata:
+  name: multi-agent-research
+  version: 1.1.0
+  description: 多 Agent 研究流水线，覆盖知识检索、Web 检索、并发分析、沙箱执行与报告产物
+spec:
+  inputSchema:
+    type: object
+    properties:
+      topic:
+        type: string
+    required:
+      - topic
+  outputSchema:
+    type: object
+    properties:
+      report:
+        type: string
+      analysis:
+        type: object
+      chart:
+        type: array
+  maxConcurrency: 4
+  nodes:
+    - id: planner
+      type: agent
+      uses: planner
+      with:
+        topic: $.input.topic
+        tool_hint: none
+    - id: kb_researcher
+      type: agent
+      uses: repository-researcher
+      needs: [planner]
+      with:
+        query: $.input.topic
+        plan: $.nodes.planner.output
+        tool_hint: knowledge.search
+    - id: web_researcher
+      type: agent
+      uses: web-researcher
+      needs: [planner]
+      with:
+        query: $.input.topic
+        plan: $.nodes.planner.output
+        tool_hint: web.search
+    - id: analyst
+      type: agent
+      uses: analyst
+      needs: [kb_researcher, web_researcher]
+      with:
+        topic: $.input.topic
+        internal_research: $.nodes.kb_researcher.output
+        web_research: $.nodes.web_researcher.output
+        tool_hint: none
+    - id: chart_run
+      type: capability
+      uses: sandbox.execute
+      needs: [analyst]
+      with:
+        files:
+          chart.svg: '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320"><rect width="100%" height="100%" fill="#07111f"/><text x="40" y="70" fill="#e7eef8" font-size="24">AgentForge Research Pipeline</text><rect x="50" y="150" width="220" height="70" rx="12" fill="#4f8cff"/><rect x="310" y="110" width="330" height="150" rx="12" fill="#26c281"/><text x="80" y="193" fill="white">Parallel Agents</text><text x="350" y="193" fill="#07111f">Durable DAG + Capabilities</text></svg>'
+        command: python -c "from pathlib import Path; print(Path('chart.svg').read_text(encoding='utf-8')[:24])"
+        timeout_seconds: 30
+        capture: [chart.svg]
+    - id: writer
+      type: agent
+      uses: writer
+      needs: [analyst, chart_run]
+      with:
+        topic: $.input.topic
+        analysis: $.nodes.analyst.output
+        chart_stdout: $.nodes.chart_run.output.stdout
+        tool_hint: none
+    - id: report_artifact
+      type: capability
+      uses: artifact.write
+      needs: [writer]
+      with:
+        name: research-report.md
+        content: $.nodes.writer.output.content
+        content_type: text/markdown; charset=utf-8
+  edges: []
+  output:
+    report: $.nodes.writer.output.content
+    analysis: $.nodes.analyst.output
+    chart: $.nodes.chart_run.output.artifacts

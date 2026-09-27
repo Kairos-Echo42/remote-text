@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · AgentForge</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="auth-body">
+  <section class="auth-card">
+    <div class="brand large"><span class="brand-mark">AF</span><span>AgentForge</span></div>
+    <h1>进入工作空间</h1>
+    <p class="muted">异步 Multi-Agent 编排、能力运行时与可审计执行平台。</p>
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+    <form method="post" action="/login" class="stack">
+      <label>邮箱<input type="email" name="email" value="admin@example.com" required></label>
+      <label>密码<input type="password" name="password" required></label>
+      <button class="btn primary full" type="submit">登录</button>
+    </form>
+  </section>
+</body>
+</html>

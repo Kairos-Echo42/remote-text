@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}设置 · AgentForge{% endblock %}
+{% block heading %}工作区设置{% endblock %}
+{% block content %}
+{% if new_api_key %}<div class="alert success">新 API Key 仅显示一次：<code>{{ new_api_key }}</code></div>{% endif %}
+<section class="panel">
+<div class="panel-head"><h2>成员与角色</h2></div>
+<table><thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>加入时间</th></tr></thead><tbody>
+{% for membership, user in members %}<tr><td>{{ user.display_name }}</td><td>{{ user.email }}</td><td>{{ membership.role }}</td><td>{{ membership.created_at.strftime('%Y-%m-%d') }}</td></tr>
+{% else %}<tr><td colspan="4"><div class="empty">暂无成员。</div></td></tr>{% endfor %}
+</tbody></table>
+<form method="post" action="/app/settings/users" class="inline-create">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input name="display_name" placeholder="姓名" required>
+<input type="email" name="email" placeholder="邮箱" required>
+<input type="password" name="password" placeholder="初始密码" required>
+<select name="role"><option value="member">member</option><option value="admin">admin</option><option value="viewer">viewer</option></select>
+<button class="btn primary" type="submit">添加成员</button>
+</form>
+</section>
+<section class="panel">
+<div class="panel-head"><h2>API Keys</h2></div>
+<table><thead><tr><th>名称</th><th>前缀</th><th>Scopes</th><th>创建时间</th></tr></thead><tbody>
+{% for key in api_keys %}<tr><td>{{ key.name }}</td><td class="mono">{{ key.key_prefix }}</td><td>{{ key.scopes|join(', ') }}</td><td>{{ key.created_at.strftime('%Y-%m-%d') }}</td></tr>
+{% else %}<tr><td colspan="4"><div class="empty">暂无 API Key。</div></td></tr>{% endfor %}
+</tbody></table>
+<form method="post" action="/app/settings/api-keys" class="inline-create">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input name="name" placeholder="Key 名称" required><button class="btn primary" type="submit">创建 Key</button>
+</form>
+</section>
+{% endblock %}

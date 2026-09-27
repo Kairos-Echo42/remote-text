@@ -1,0 +1,11 @@
+-c requirements.txt
+pytest>=8.3,<10
+pytest-asyncio>=0.25,<2
+pytest-cov>=6,<8
+pytest-timeout>=2.3,<3
+aiosqlite>=0.20,<1
+ruff>=0.9,<1
+mypy>=1.14,<2
+pip-tools>=7.4,<8
+playwright>=1.49,<2
+locust>=2.32,<3

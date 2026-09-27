@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}工作台 · AgentForge{% endblock %}
+{% block heading %}任务工作台{% endblock %}
+{% block content %}
+<div class="split">
+  <section class="panel grow">
+    <h2>启动工作流</h2>
+    <form method="post" action="/app/workbench/run" class="stack" x-data="{ input: '{\n  &quot;topic&quot;: &quot;如何构建可靠的异步多 Agent 平台？&quot;\n}' }">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>工作流版本
+        <select name="workflow_version_id" required>
+          <option value="">选择已发布版本</option>
+          {% for version in versions %}
+          <option value="{{ version.id }}">{{ version.definition.metadata.name }} · {{ version.version }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>输入 JSON
+        <textarea name="input_json" rows="14" x-model="input" spellcheck="false"></textarea>
+      </label>
+      <button class="btn primary" type="submit">创建运行</button>
+    </form>
+  </section>
+  <aside class="panel narrow">
+    <h2>执行模型</h2>
+    <ol class="timeline compact">
+      <li><strong>控制面</strong><span>创建 DAG、校验输入、写入 Outbox。</span></li>
+      <li><strong>调度器</strong><span>计算就绪节点并执行并发限制。</span></li>
+      <li><strong>Worker</strong><span>调用 Agent 或 Capability 并持久化事件。</span></li>
+      <li><strong>恢复</strong><span>通过 Lease 和 Checkpoint 接续中断任务。</span></li>
+    </ol>
+  </aside>
+</div>
+{% endblock %}

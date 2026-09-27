@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}模型 · AgentForge{% endblock %}
+{% block heading %}模型配置{% endblock %}
+{% block content %}
+<div class="split">
+<section class="panel grow">
+<table><thead><tr><th>名称</th><th>角色</th><th>Provider</th><th>模型</th><th>上下文</th><th>默认</th></tr></thead><tbody>
+{% for model in models %}<tr><td>{{ model.name }}</td><td>{{ model.kind }}</td><td>{{ model.provider }}</td><td class="mono">{{ model.model }}</td><td>{{ model.max_context_tokens }}</td><td>{{ '是' if model.is_default else '否' }}</td></tr>
+{% else %}<tr><td colspan="6"><div class="empty">尚未配置模型，测试环境将使用 Fake Provider。</div></td></tr>{% endfor %}
+</tbody></table>
+</section>
+<aside class="panel narrow"><h2>新增 OpenAI 兼容模型</h2>
+<form method="post" action="/app/models" class="stack">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>名称<input name="name" required></label>
+<label>角色<select name="kind"><option value="chat">Chat</option><option value="embedding">Embedding</option></select></label>
+<label>Provider<select name="provider"><option value="openai_compatible">OpenAI Compatible</option><option value="fake">Fake</option></select></label>
+<label>模型 ID<input name="model" placeholder="gpt-4.1-mini" required></label>
+<label>Base URL<input name="base_url" placeholder="https://api.openai.com/v1"></label>
+<label>API Key<input type="password" name="api_key"></label>
+<button class="btn primary" type="submit">保存</button>
+</form></aside></div>
+{% endblock %}

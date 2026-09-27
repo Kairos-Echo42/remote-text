@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}总览 · AgentForge{% endblock %}
+{% block heading %}{{ workspace.name }}{% endblock %}
+{% block actions %}<a class="btn primary" href="/app/workbench">创建运行</a>{% endblock %}
+{% block content %}
+<section class="metric-grid">
+  <article class="metric"><span>累计运行</span><strong>{{ counts.runs }}</strong></article>
+  <article class="metric"><span>活动运行</span><strong>{{ counts.active }}</strong></article>
+  <article class="metric"><span>Agents</span><strong>{{ counts.agents }}</strong></article>
+  <article class="metric"><span>知识库</span><strong>{{ counts.knowledge_bases }}</strong></article>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>最近运行</h2><a href="/app/runs">查看全部</a></div>
+  {% if recent_runs %}
+  <table>
+    <thead><tr><th>运行</th><th>状态</th><th>输入</th><th>创建时间</th></tr></thead>
+    <tbody>
+      {% for run in recent_runs %}
+      <tr>
+        <td><a class="mono" href="/app/runs/{{ run.id }}">{{ run.id|string|truncate(13, True, '') }}</a></td>
+        <td><span class="status {{ run.status }}">{{ run.status }}</span></td>
+        <td class="truncate">{{ run.input }}</td>
+        <td>{{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">还没有运行记录。进入工作台启动第一个多 Agent 任务。</div>
+  {% endif %}
+</section>
+{% endblock %}
