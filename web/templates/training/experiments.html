@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}实验 · AgentForge{% endblock %}
+{% block heading %}训练实验{% endblock %}
+{% block content %}
+<div class="split">
+  <section class="panel grow">
+    <table>
+      <thead><tr><th>实验</th><th>状态</th><th>目标</th><th>预算消耗</th><th>最佳 Job</th></tr></thead>
+      <tbody>{% for experiment in experiments %}
+        <tr>
+          <td><a href="/app/experiments/{{ experiment.id }}">{{ experiment.name }}</a></td>
+          <td><span class="status {{ experiment.status }}">{{ experiment.status }}</span></td>
+          <td>{{ experiment.objective_metric }} · {{ experiment.objective_direction }}</td>
+          <td>{{ experiment.consumed_total_seconds|round(1) }}s / GPU {{ experiment.consumed_gpu_seconds|round(1) }}s</td>
+          <td class="mono">{{ experiment.best_job_id or '—' }}</td>
+        </tr>
+      {% else %}<tr><td colspan="5"><div class="empty">尚未创建实验。</div></td></tr>{% endfor %}</tbody>
+    </table>
+  </section>
+  <aside class="panel narrow">
+    <h2>创建实验</h2>
+    <form method="post" action="/app/experiments" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>名称<input name="name" required></label>
+      <label>Dataset Version<select name="dataset_version_id">{% for version in versions %}<option value="{{ version.id }}">{{ version.version }} · {{ version.id }}</option>{% endfor %}</select></label>
+      <label>Validation Metric<input name="metric" value="f1_macro" required></label>
+      <label>方向<select name="direction"><option value="maximize">maximize</option><option value="minimize">minimize</option></select></label>
+      <label>最低改进<input type="number" step="0.0001" name="minimum_improvement" value="0"></label>
+      <button class="btn primary" type="submit">创建并提交 Baseline</button>
+    </form>
+  </aside>
+</div>
+{% endblock %}

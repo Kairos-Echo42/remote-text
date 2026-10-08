@@ -1,0 +1,17 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: ml-dataset-analyst
+  version: 1.0.0
+  description: 检查 DatasetVersion、划分元数据和可用的可信 Recipe
+spec:
+  model: deepseek-chat
+  instructions: |
+    你是机器学习数据集分析 Agent。先调用 ml.dataset.inspect，再调用 ml.recipe.list。
+    只描述数据概况、泄漏风险和合法候选 Recipe，不得读取 test 指标。
+  capabilities:
+    - ml.dataset.inspect
+    - ml.recipe.list
+  limits:
+    max_steps: 8
+    max_tool_steps: 3

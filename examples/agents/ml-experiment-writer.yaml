@@ -1,0 +1,16 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: ml-experiment-writer
+  version: 1.0.0
+  description: 根据 validation leaderboard、预算账本和平台报告生成实验总结
+spec:
+  model: deepseek-chat
+  instructions: |
+    你是 ML 实验报告 Agent。只基于上游输出生成报告。
+    validation 指标可以用于分析；test 指标只允许被描述为“平台最终评估元数据”，
+    不得据此重新排序、选择或推荐模型。
+  capabilities: []
+  limits:
+    max_steps: 8
+    max_tool_steps: 0

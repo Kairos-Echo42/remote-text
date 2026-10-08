@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Recipe · AgentForge{% endblock %}
+{% block heading %}Trusted Recipes{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>Baseline Strategies</h2><span class="muted">平台注册、版本不可变</span></div>
+  <table>
+    <thead><tr><th>Strategy</th><th>Dataset</th><th>Task</th><th>Recipe</th><th>说明</th><th>Checksum</th></tr></thead>
+    <tbody>
+    {% for baseline in baselines %}
+      <tr>
+        <td>{{ baseline.spec.qualified_id }}</td>
+        <td>{{ baseline.spec.dataset_kind.value }}</td>
+        <td>{{ baseline.spec.task_type.value }}</td>
+        <td class="mono">{{ baseline.spec.recipe_id }}</td>
+        <td>{{ baseline.explain() }}</td>
+        <td class="mono">{{ baseline.spec.checksum[:12] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Recipe Registry</h2><span class="muted">Agent 只能在参数范围内选择</span></div>
+  <div class="card-grid">
+  {% for recipe in recipes %}
+    <article class="card">
+      <div class="panel-head"><h3>{{ recipe.display_name }}</h3><span class="tag">{{ recipe.backend }}</span></div>
+      <p class="muted mono">{{ recipe.qualified_id }}</p>
+      <p>{{ recipe.description }}</p>
+      <dl>
+        <div><dt>Task</dt><dd>{{ recipe.task_types | map(attribute='value') | join(', ') }}</dd></div>
+        <div><dt>Dataset</dt><dd>{{ recipe.dataset_kinds | map(attribute='value') | join(', ') }}</dd></div>
+        <div><dt>Metric</dt><dd>{{ recipe.default_metric }} · {{ recipe.default_direction.value }}</dd></div>
+        <div><dt>GPU</dt><dd>{{ recipe.resources.default_device_policy.value }} · max {{ recipe.resources.max_job_seconds }}s</dd></div>
+        <div><dt>Epochs</dt><dd>{{ recipe.resources.min_epochs }} … {{ recipe.resources.max_epochs }}</dd></div>
+        <div><dt>Batch</dt><dd>{{ recipe.resources.min_batch_size }} … {{ recipe.resources.max_batch_size }}</dd></div>
+      </dl>
+      <details>
+        <summary>允许的超参数</summary>
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Range / Choices</th><th>Default</th></tr></thead>
+          <tbody>
+          {% for parameter in recipe.hyperparameters %}
+            <tr><td class="mono">{{ parameter.name }}</td><td>{{ parameter.type.value }}</td><td>{{ parameter.choices or ((parameter.minimum|string) ~ ' … ' ~ (parameter.maximum|string)) }}</td><td>{{ parameter.default }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      <p class="mono muted">checksum {{ recipe.checksum[:16] }}</p>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}

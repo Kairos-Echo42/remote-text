@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}数据集 · AgentForge{% endblock %}
+{% block heading %}机器学习数据集{% endblock %}
+{% block content %}
+<div class="split">
+  <section class="panel grow">
+    <div class="panel-head"><h2>Dataset Versions</h2><span class="muted">不可变 checksum 与 split metadata</span></div>
+    <table>
+      <thead><tr><th>数据集</th><th>版本</th><th>类型</th><th>状态</th><th>Split</th><th>checksum</th></tr></thead>
+      <tbody>
+      {% for version in versions %}
+        {% set dataset = datasets | selectattr('id', 'equalto', version.dataset_id) | first %}
+        <tr>
+          <td>{{ dataset.name if dataset else version.dataset_id }}</td>
+          <td>{{ version.version }}</td>
+          <td>{{ dataset.kind if dataset else '—' }}</td>
+          <td><span class="status {{ version.status }}">{{ version.status }}</span></td>
+          <td class="mono">{{ (version.split_checksum or '—')[:12] }}</td>
+          <td class="mono">{{ version.checksum[:12] }}</td>
+        </tr>
+      {% else %}<tr><td colspan="6"><div class="empty">尚未上传数据集。</div></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <aside class="panel narrow">
+    <h2>创建数据集</h2>
+    <form method="post" action="/app/datasets" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>名称<input name="name" required></label>
+      <label>数据类型<select name="kind"><option value="tabular">表格 CSV</option><option value="image_folder">图片 ZIP</option></select></label>
+      <label>任务类型<select name="task_type"><option value="tabular_classification">表格分类</option><option value="tabular_regression">表格回归</option><option value="image_classification">图像分类</option></select></label>
+      <label>说明<textarea name="description" rows="3"></textarea></label>
+      <button class="btn primary" type="submit">创建</button>
+    </form>
+  </aside>
+</div>
+<section class="panel">
+  <h2>上传版本</h2>
+  <div class="card-grid">
+  {% for dataset in datasets %}
+    <form method="post" action="/app/datasets/{{ dataset.id }}/versions" enctype="multipart/form-data" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <strong>{{ dataset.name }}</strong>
+      <input type="file" name="file" required>
+      {% if dataset.kind == 'tabular' %}<input name="target_column" placeholder="目标列名" required>{% endif %}
+      <button class="btn" type="submit">上传并生成 split</button>
+    </form>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}
