@@ -9,6 +9,7 @@ TEST_ROOT = Path(tempfile.gettempdir()) / "agentforge-tests"
 TEST_ROOT.mkdir(parents=True, exist_ok=True)
 (TEST_ROOT / "artifacts").mkdir(parents=True, exist_ok=True)
 (TEST_ROOT / "workspaces").mkdir(parents=True, exist_ok=True)
+(TEST_ROOT / "training").mkdir(parents=True, exist_ok=True)
 TEST_DATABASE = (TEST_ROOT / "agentforge-test.db").as_posix()
 
 os.environ.update(
@@ -18,6 +19,8 @@ os.environ.update(
         "AGENTFORGE_REDIS_URL": "redis://localhost:6399/15",
         "AGENTFORGE_ARTIFACT_ROOT": str(TEST_ROOT / "artifacts"),
         "AGENTFORGE_WORKSPACE_ROOT": str(TEST_ROOT / "workspaces"),
+        "AGENTFORGE_TRAINING_ROOT": str(TEST_ROOT / "training"),
+        "AGENTFORGE_HOST_TRAINING_ROOT": str(TEST_ROOT / "training"),
         "AGENTFORGE_SECRET_KEY": "test-secret-key-at-least-32-bytes-long",
         "AGENTFORGE_MASTER_KEY": "dGVzdC1tYXN0ZXIta2V5LTMyLWJ5dGVzISE=",
         "AGENTFORGE_ADMIN_EMAIL": "admin@example.com",

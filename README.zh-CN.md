@@ -13,6 +13,7 @@ AgentForge 是一个基于 Python 的异步 Multi-Agent Runtime Platform。它�
 | Agent | LangGraph plan-act-observe、结构化输出、步数与 Token 预算 |
 | 模型 | OpenAI 兼容 Chat Completions/Embeddings，测试使用确定性 Fake Provider |
 | 上下文 | pgvector + 全文混合检索、引用、自动提取且可审阅的长期 Memory |
+| 训练实验 | Recipe 驱动的 sklearn/PyTorch 实验、预算预留、Baseline、validation-only 选择、Checkpoint 和模型仓库 |
 | 扩展 | MCP stdio/Streamable HTTP、声明式与代码型 Skills |
 | 沙箱 | Docker 非 root、只读根文件系统、资源限制、默认禁用网络、Local Provider 测试 |
 | Gateway | 原生 REST API、SSE 断线重放、Workspace API Key、OpenAPI |
@@ -65,10 +66,32 @@ docker compose up -d --build gateway worker scheduler
 
 Compose 服务运行时，建议通过 Web 工作台或 API 创建任务。`agentforge demo` 会自动使用 Redis DB 1 启动进程内 Scheduler/Worker，因此不会和 Compose Worker 争夺同一队列。
 
+## 训练实验 Profile
+
+ML/DL 训练系统作为可选 Compose profile 运行：
+
+```powershell
+docker compose --profile training up -d --build
+# 或者在全新 Windows 检出一键初始化：
+.\scripts\bootstrap.ps1 -WithTraining
+```
+
+支持：
+
+- 表格分类/回归：sklearn Baseline、线性模型、Random Forest、PyTorch MLP；
+- 小型图像分类：从零训练的 CNN；
+- 每个 Experiment 强制绑定可解释 BaselineStrategy；
+- Job、轮次、单 Job 时间和 GPU 时间预算预留与消耗统计；
+- 预处理只在 train split fit，模型选择只使用 validation，test 由平台在候选确定后最终评估；
+- DatasetVersion、split、Recipe、配置、随机种子、运行环境和 Docker digest 可复现性记录；
+- 受信任且不可变的 RecipeRegistry、Artifact Lineage、Checkpoint checksum 和候选模型 Bundle；
+- `required_gpu`、`preferred_gpu`、`cpu_only` 三种设备策略。
+
 ## 中文文档
 
 - [中文文档总索引](docs/README.zh-CN.md)
 - [架构设计](docs/ARCHITECTURE.zh-CN.md)
+- [训练实验系统](docs/TRAINING.zh-CN.md)
 - [API 文档](docs/API.zh-CN.md)
 - [演示指南](docs/DEMO.zh-CN.md)
 - [基准结果](docs/BENCHMARKS.zh-CN.md)

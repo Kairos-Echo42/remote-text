@@ -17,6 +17,7 @@ from agentforge.logging import configure_logging, get_logger
 from agentforge.runtime.queue import close_redis, get_redis
 from agentforge.security import generate_csrf_token
 from agentforge.services.auth import bootstrap_default_admin
+from agentforge.training.audit import PolicyViolation
 
 logger = get_logger(__name__)
 
@@ -83,6 +84,20 @@ def create_app() -> FastAPI:
                 "title": "Internal Server Error",
                 "status": 500,
                 "detail": "The request could not be completed.",
+                "instance": request.url.path,
+            },
+        )
+
+    @app.exception_handler(PolicyViolation)
+    async def policy_violation(request: Request, exc: PolicyViolation):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "type": "about:blank",
+                "title": "Policy Violation",
+                "status": 409,
+                "detail": exc.reason,
+                "reason_code": exc.reason_code,
                 "instance": request.url.path,
             },
         )

@@ -52,3 +52,18 @@ conda run --no-capture-output -n agentforge python benchmarks/concurrency_benchm
 ```
 
 验证点：Worker 抢占后崩溃、Redis 消息未 ACK、Lease 到期、Scheduler 回收节点、替换 Worker 接管、业务能力只执行一次。
+
+
+## Training Reliability Checks
+
+The training subsystem uses deterministic Fake Backend tests before any GPU benchmark:
+
+- mandatory baseline creation;
+- train-only preprocessor fit and transform-only validation/test;
+- validation-only selection and platform final test evaluation;
+- reservation accounting under `max_total_seconds` and `max_gpu_seconds`;
+- Recipe range rejection and immutable RecipeRegistry;
+- DecisionRecord persistence for budget and test-metric policy violations;
+- Model Bundle checksums, Checkpoint checksum and lineage.
+
+GPU throughput and multi-GPU scaling are intentionally outside v0.2.1.

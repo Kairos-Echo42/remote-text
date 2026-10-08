@@ -53,6 +53,36 @@ conda run -n agentforge agentforge demo --topic "如何构建可靠的异步多 
 6. 对失败 Run 点击“重试”，展示 Attempt 历史。
 7. 从“产物”区域下载 Markdown 报告和 SVG 图表。
 
+## 训练实验演示
+
+启动可选 Trainer profile：
+
+```powershell
+docker compose --profile training up -d --build
+conda run -n agentforge agentforge sync
+```
+
+在 Web 中：
+
+1. 创建 `tabular` 或 `image_folder` Dataset；
+2. 上传 CSV 或 class-folder ZIP，生成不可变 DatasetVersion；
+3. 创建 Experiment，平台自动提交 Dummy Baseline；
+4. 由 Agent 或 API 在 Recipe 允许范围内提交候选实验；
+5. 查看 budget reservation、validation metrics 和 DecisionRecord；
+6. Check the Recipe page for allowed ranges and the experiment report for the validation leaderboard and selection reason;
+7. After selection, a human session may inspect the final test summary; Agent API keys never receive test metrics.
+6. 执行 validation-only selection；
+7. 等待 Platform final test evaluation；
+8. 在 Model Registry 人工提升 Candidate 为 Production。
+
+测试约束：
+
+- validation/test 只 transform，不 fit；
+- Agent 无法读取 test metrics；
+- 候选不超过 Baseline 时保留 Baseline；
+- required_gpu 不可用时失败，preferred_gpu 才回退 CPU；
+- Checkpoint 只用于保存和审计，v0.2 不自动续训。
+
 ## 故障恢复演示
 
 隔离环境准备 PostgreSQL 与 Redis 后运行：

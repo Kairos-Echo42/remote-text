@@ -17,3 +17,6 @@
 - Never log or return plaintext workspace secrets.
 - New side-effectful capabilities must declare idempotency and side-effect level.
 - Workflow and Agent YAML changes require validation tests.
+- New training Recipes require an immutable version, allowed hyperparameter ranges, resource limits and leakage-safe tests.
+- Do not expose test metrics to Agent capabilities or selection logic.
+- Regenerate `requirements-trainer.txt` with `pip-compile requirements-trainer.in` when Trainer dependencies change.

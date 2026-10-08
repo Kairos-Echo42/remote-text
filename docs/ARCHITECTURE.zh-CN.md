@@ -153,7 +153,20 @@ with:
 
 MCP 支持 stdio 和 Streamable HTTP。Python Skill 与 MCP stdio 属于受信任代码边界，只允许管理员配置。
 
-## 6. 模型 Provider 与上下文
+## 6. 训练实验系统
+
+ML/DL 训练系统遵循四项核心原则：
+
+- Agent 只负责实验决策；
+- Platform 负责 Recipe、预算、安全、validation-only 选择和审计；
+- Trainer 负责容器生命周期与执行监控；
+- PyTorch/sklearn 容器负责实际计算。
+
+每个 Experiment 强制绑定可解释 BaselineStrategy。RecipeRegistry 由平台维护且不可变。所有预处理只在 train split 上 fit，validation/test 只能 transform。模型排序和选择只使用 validation 指标；候选确定后，Platform 才执行 final test evaluation，并把结果作为人工审核元数据保存。
+
+`ExperimentBudget` 同时维护总时间和 GPU 时间的 reserved/consumed 账本。Job 提交时原子预留 `max_job_seconds` 硬上限，完成后释放未使用部分并记录实际消耗。Artifact checksum 存在 Artifact 节点；Lineage 边只记录输入/输出 Artifact、操作、时间与执行者。DecisionRecord 始终保存 action、result、reason 和 timestamp，包括所有 Policy 拒绝请求。
+
+## 7. 模型 Provider 与上下文
 
 ### 模型角色
 
@@ -186,7 +199,7 @@ MCP 支持 stdio 和 Streamable HTTP。Python Skill 与 MCP stdio 属于受信�
 - 用户可在 Web 中查看、编辑和删除。
 - 后续 Run 根据工作区、Agent 与查询相关性注入 Memory。
 
-## 7. Sandbox 与 Artifact
+## 8. Sandbox 与 Artifact
 
 - 生产和开发默认使用 Docker Sandbox。
 - 测试使用 Local Sandbox，保证确定性。
@@ -196,7 +209,7 @@ MCP 支持 stdio 和 Streamable HTTP。Python Skill 与 MCP stdio 属于受信�
 - Compose 中通过 `AGENTFORGE_HOST_WORKSPACE_ROOT` 将宿主机工作区正确挂载给 Docker Sandbox。
 - 输出文件通过 ArtifactStore 持久化；v0.1 使用本地卷，并预留 S3 兼容接口。
 
-## 8. 事件、SSE 与可观测性
+## 9. 事件、SSE 与可观测性
 
 - 每个 Run 的事件序号单调递增。
 - 事件先写入 PostgreSQL，再尽力广播到 Redis。
@@ -204,7 +217,7 @@ MCP 支持 stdio 和 Streamable HTTP。Python Skill 与 MCP stdio 属于受信�
 - 事件覆盖 Run、Node、Agent、Tool、MCP、Sandbox 和 Artifact。
 - 日志使用 JSON 结构和 request/correlation id。
 
-## 9. 安全边界
+## 10. 安全边界
 
 - 所有 Repository 查询强制 Workspace 隔离。
 - Web 使用 HttpOnly JWT Cookie、CSRF 和 Argon2。

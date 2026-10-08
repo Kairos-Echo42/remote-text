@@ -39,6 +39,28 @@ Base path: `/api/v1`. Interactive OpenAPI is available at `/docs` in development
 | GET | `/workspaces/{id}/artifacts` | List artifacts |
 | GET | `/artifacts/{id}` | Download artifact |
 | GET/POST | `/workspaces/{id}/api-keys` | Workspace API keys |
+| GET/POST | `/workspaces/{id}/datasets` | ML datasets |
+| GET/POST | `/datasets/{id}/versions` | Immutable dataset versions and split manifests |
+| GET | `/workspaces/{id}/training/recipes` | Trusted Recipe catalog and allowed hyperparameters |
+| GET | `/workspaces/{id}/training/baselines` | Trusted BaselineStrategy catalog |
+| GET/POST | `/workspaces/{id}/experiments` | Training experiments and budgets |
+| GET | `/experiments/{id}/report` | Budget, baseline, validation leaderboard and human final-test report |
+| GET | `/experiments/{id}/leaderboard` | Validation-only ranking |
+| GET | `/experiments/{id}/budget-reservations` | Job-level reservation and reconciliation records |
+| GET | `/experiments/{id}/jobs` | Jobs for an experiment |
+| POST | `/experiments/{id}/jobs` | Submit a budgeted Job batch |
+| POST | `/experiments/{id}/select-best` | Validation-only model selection |
+| POST | `/experiments/{id}/finalize` | Wait for platform final test evaluation |
+| GET | `/experiments/{id}/decisions` | DecisionRecord audit |
+| GET | `/training/jobs/{id}` | TrainingJob state and resource accounting |
+| GET | `/training/jobs/{id}/metrics` | Persisted metrics; test data is human-session-only and rejected for Agent API keys |
+| GET | `/training/jobs/{id}/events` | Training lifecycle events |
+| GET | `/training/jobs/{id}/manifest` | Reproducibility Manifest |
+| GET | `/training/jobs/{id}/checkpoints` | Checkpoint checksum and validation metadata |
+| POST | `/training/jobs/{id}/cancel` | Graceful SIGTERM then SIGKILL cancellation |
+| GET | `/workspaces/{id}/model-versions` | Candidate/Production/Archived model registry |
+| POST | `/model-versions/{id}/promote` | Manual promotion without test-metric ordering |
+| POST | `/model-versions/{id}/archive` | Archive a model version |
 
 ## Create Run
 
@@ -60,6 +82,16 @@ Response: `202 Accepted`
   "event_url": "/api/v1/runs/UUID/events"
 }
 ```
+
+## Training Experiment Contract
+
+- Every Experiment has an immutable BaselineStrategy; the default uses DummyClassifier or DummyRegressor.
+- Preprocessing is fit on train only. Validation/test are transform-only.
+- Model selection reads validation metrics only. Final test metrics are produced after selection and never enter Agent context.
+- `ExperimentBudget` tracks reserved and consumed total/GPU seconds using transactional admission and later reconciliation.
+- RecipeRegistry is platform-trusted and immutable. Agents cannot register or modify Recipes.
+- Artifact checksums live on Artifact records. Lineage edges store input/output artifacts, operation, timestamp and actor.
+- `DecisionRecord` records accepted and rejected decisions; action, result, reason and timestamp are always required.
 
 ## Event Contract
 

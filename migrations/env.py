@@ -7,9 +7,9 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from agentforge import models  # noqa: F401
 from agentforge.config import get_settings
 from agentforge.db import Base
-from agentforge import models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

@@ -1,6 +1,7 @@
 param(
     [switch]$SkipEnvironment,
-    [switch]$SkipCompose
+    [switch]$SkipCompose,
+    [switch]$WithTraining
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +44,16 @@ if ($envText -match "(?m)^AGENTFORGE_HOST_WORKSPACE_ROOT=.*$") {
 } else {
     $envText = $envText.TrimEnd() + "`nAGENTFORGE_HOST_WORKSPACE_ROOT=$hostWorkspaceRoot`n"
 }
+$hostTrainingRoot = ((Join-Path $Root "data\training") -replace "\\", "/")
+if ($envText -match "(?m)^AGENTFORGE_HOST_TRAINING_ROOT=.*$") {
+    $envText = [regex]::Replace(
+        $envText,
+        "(?m)^AGENTFORGE_HOST_TRAINING_ROOT=.*$",
+        "AGENTFORGE_HOST_TRAINING_ROOT=$hostTrainingRoot"
+    )
+} else {
+    $envText = $envText.TrimEnd() + "`nAGENTFORGE_HOST_TRAINING_ROOT=$hostTrainingRoot`n"
+}
 [IO.File]::WriteAllText((Join-Path $Root ".env"), $envText, [Text.UTF8Encoding]::new($false))
 
 if (-not $SkipEnvironment) {
@@ -56,7 +67,12 @@ if (-not $SkipEnvironment) {
 }
 
 if (-not $SkipCompose) {
-    & $Docker compose up -d --build
+    if ($WithTraining) {
+        & $Docker compose --profile training up -d --build
+    } else {
+        & $Docker compose up -d --build
+        Write-Host "Training profile is disabled. Restart with -WithTraining to include the Trainer service."
+    }
     Write-Host "Waiting for AgentForge Gateway..."
     for ($i = 0; $i -lt 60; $i++) {
         try {

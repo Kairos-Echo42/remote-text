@@ -23,15 +23,28 @@ from agentforge.gateway.deps import (
 from agentforge.models import (
     AgentDefinition,
     Artifact,
+    BudgetReservation,
+    Checkpoint,
+    Dataset,
+    DatasetVersion,
+    DecisionRecord,
+    Experiment,
     KnowledgeBase,
+    LineageEdge,
+    LineageNode,
     MCPServer,
     Membership,
     MemoryRecord,
+    MetricPoint,
     ModelProfile,
+    ModelVersion,
     NodeRun,
     Run,
     RunEvent,
     SkillRecord,
+    TrainingAttempt,
+    TrainingEvent,
+    TrainingJob,
     WorkflowDefinition,
     WorkflowVersion,
     Workspace,
@@ -42,6 +55,17 @@ from agentforge.schemas import (
     ApiKeyCreate,
     ApiKeyCreated,
     ArtifactRead,
+    BaselineStrategyRead,
+    BudgetReservationRead,
+    CheckpointRead,
+    DatasetCreate,
+    DatasetRead,
+    DatasetVersionRead,
+    DecisionRecordRead,
+    ExperimentCreate,
+    ExperimentLeaderboardItem,
+    ExperimentRead,
+    ExperimentReport,
     KnowledgeBaseCreate,
     KnowledgeBaseRead,
     MCPServerCreate,
@@ -49,12 +73,17 @@ from agentforge.schemas import (
     MemoryCreate,
     MemoryRead,
     MemoryUpdate,
+    MetricPointRead,
     ModelCreate,
     ModelRead,
+    ModelVersionRead,
     NodeRunRead,
     RunAccepted,
     RunCreate,
     RunRead,
+    TrainingEventRead,
+    TrainingJobCreate,
+    TrainingJobRead,
     WorkflowRead,
     WorkflowVersionRead,
     WorkspaceCreate,
@@ -75,6 +104,19 @@ from agentforge.services.runs import (
 )
 from agentforge.services.workflows import WorkflowValidationError, sync_workflow
 from agentforge.storage.artifacts import LocalArtifactStore
+from agentforge.training.audit import DecisionRecordData, DecisionResult, record_decision, record_rejection
+from agentforge.training.baselines import build_baseline_registry
+from agentforge.training.datasets import create_dataset, upload_dataset_version
+from agentforge.training.recipes import get_recipe_registry
+from agentforge.training.service import TrainingService
+from agentforge.training.types import (
+    DatasetKind,
+    ExperimentBudget,
+    ModelStage,
+    SelectionPolicy,
+    TaskType,
+    TrainingJobSpec,
+)
 from agentforge.workflow import WorkflowDocument
 
 router = APIRouter(prefix="/api/v1")
@@ -215,6 +257,17 @@ async def list_capabilities(
         "workspace.list",
         "sandbox.execute",
         "artifact.write",
+        "ml.dataset.inspect",
+        "ml.recipe.list",
+        "ml.experiment.create",
+        "training.submit_batch",
+        "training.await_batch",
+        "training.results",
+        "training.await_experiment",
+        "training.test_metrics",
+        "training.cancel",
+        "model.select_best",
+        "model.register_candidate",
     ]
     return {
         "builtins": builtins,
@@ -743,6 +796,666 @@ async def list_skills(
         }
         for skill in rows
     ]
+
+
+@router.get("/workspaces/{workspace_id}/datasets", response_model=list[DatasetRead])
+async def list_datasets(
+    workspace_id: uuid.UUID,
+    principal: Principal = Depends(require_workspace),
+    session: AsyncSession = Depends(database_session),
+):
+    rows = await session.scalars(
+        select(Dataset).where(Dataset.workspace_id == workspace_id).order_by(Dataset.created_at.desc())
+    )
+    return list(rows.all())
+
+
+@router.post("/workspaces/{workspace_id}/datasets", response_model=DatasetRead, status_code=201)
+async def create_training_dataset(
+    workspace_id: uuid.UUID,
+    payload: DatasetCreate,
+    principal: Principal = Depends(require_workspace),
+    session: AsyncSession = Depends(database_session),
+):
+    dataset = await create_dataset(
+        session,
+        workspace_id=workspace_id,
+        name=payload.name,
+        kind=DatasetKind(payload.kind),
+        task_type=TaskType(payload.task_type),
+        description=payload.description,
+        created_by=principal.user_id,
+    )
+    await session.commit()
+    await session.refresh(dataset)
+    return dataset
+
+
+@router.get("/datasets/{dataset_id}/versions", response_model=list[DatasetVersionRead])
+async def list_dataset_versions(
+    dataset_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    dataset = await session.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="dataset not found")
+    await _workspace_access(session, principal, dataset.workspace_id)
+    rows = await session.scalars(
+        select(DatasetVersion).where(DatasetVersion.dataset_id == dataset.id).order_by(DatasetVersion.created_at.desc())
+    )
+    return list(rows.all())
+
+
+@router.post("/datasets/{dataset_id}/versions", response_model=DatasetVersionRead, status_code=201)
+async def upload_training_dataset_version(
+    dataset_id: uuid.UUID,
+    file: UploadFile = File(...),
+    target_column: str | None = Query(default=None),
+    split_seed: int = Query(default=42, ge=0),
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    dataset = await session.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="dataset not found")
+    await _workspace_access(session, principal, dataset.workspace_id)
+    content = await file.read()
+    if len(content) > get_settings().training_max_dataset_bytes:
+        raise HTTPException(status_code=413, detail="dataset exceeds configured size limit")
+    version = await upload_dataset_version(
+        session,
+        dataset=dataset,
+        filename=file.filename or "dataset.bin",
+        content=content,
+        artifact_store=LocalArtifactStore(),
+        target_column=target_column,
+        split_seed=split_seed,
+    )
+    await session.commit()
+    await session.refresh(version)
+    return version
+
+
+@router.get("/workspaces/{workspace_id}/training/recipes")
+async def list_training_recipes(
+    workspace_id: uuid.UUID,
+    principal: Principal = Depends(require_workspace),
+):
+    del workspace_id, principal
+    return {
+        "recipes": [
+            {
+                "recipe_id": recipe.qualified_id,
+                "display_name": recipe.display_name,
+                "backend": recipe.backend,
+                "task_types": [item.value for item in recipe.task_types],
+                "dataset_kinds": [item.value for item in recipe.dataset_kinds],
+                "default_metric": recipe.default_metric,
+                "default_direction": recipe.default_direction.value,
+                "checksum": recipe.checksum,
+                "hyperparameters": [item.model_dump(mode="json") for item in recipe.hyperparameters],
+                "resources": recipe.resources.model_dump(mode="json"),
+            }
+            for recipe in get_recipe_registry().list()
+        ]
+    }
+
+
+@router.get(
+    "/workspaces/{workspace_id}/training/baselines",
+    response_model=list[BaselineStrategyRead],
+)
+async def list_baseline_strategies(
+    workspace_id: uuid.UUID,
+    principal: Principal = Depends(require_workspace),
+):
+    del workspace_id, principal
+    return [
+        {
+            **strategy.spec.model_dump(mode="json"),
+            "checksum": strategy.spec.checksum,
+        }
+        for strategy in build_baseline_registry().list()
+    ]
+
+
+@router.get("/workspaces/{workspace_id}/experiments", response_model=list[ExperimentRead])
+async def list_experiments(
+    workspace_id: uuid.UUID,
+    principal: Principal = Depends(require_workspace),
+    session: AsyncSession = Depends(database_session),
+):
+    rows = await session.scalars(
+        select(Experiment).where(Experiment.workspace_id == workspace_id).order_by(Experiment.created_at.desc())
+    )
+    experiments = list(rows.all())
+    if principal.auth_type == "session":
+        return experiments
+    return [
+        ExperimentRead.model_validate(experiment).model_copy(update={"final_test_metrics": None})
+        for experiment in experiments
+    ]
+
+
+@router.post("/workspaces/{workspace_id}/experiments", response_model=ExperimentRead, status_code=201)
+async def create_training_experiment(
+    workspace_id: uuid.UUID,
+    payload: ExperimentCreate,
+    principal: Principal = Depends(require_workspace),
+    session: AsyncSession = Depends(database_session),
+):
+    service = TrainingService()
+    budget = ExperimentBudget.model_validate(payload.budget)
+    policy = SelectionPolicy.model_validate(payload.selection_policy) if payload.selection_policy else None
+    experiment = await service.create_experiment(
+        session,
+        workspace_id=workspace_id,
+        dataset_version_id=payload.dataset_version_id,
+        name=payload.name,
+        baseline_strategy_id=payload.baseline_strategy_id,
+        budget=budget,
+        search_strategy=payload.search_strategy,
+        selection_policy=policy,
+        created_by=principal.user_id,
+    )
+    await session.commit()
+    await session.refresh(experiment)
+    return experiment
+
+
+@router.get("/experiments/{experiment_id}", response_model=ExperimentRead)
+async def get_experiment(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    if principal.auth_type != "session":
+        return ExperimentRead.model_validate(experiment).model_copy(update={"final_test_metrics": None})
+    return experiment
+
+
+@router.get(
+    "/experiments/{experiment_id}/leaderboard",
+    response_model=list[ExperimentLeaderboardItem],
+)
+async def get_experiment_leaderboard(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    return await _experiment_leaderboard(session, experiment)
+
+
+@router.get("/experiments/{experiment_id}/budget-reservations", response_model=list[BudgetReservationRead])
+async def get_experiment_budget_reservations(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    rows = await session.scalars(
+        select(BudgetReservation)
+        .where(BudgetReservation.experiment_id == experiment.id)
+        .order_by(BudgetReservation.created_at)
+    )
+    return list(rows.all())
+
+
+@router.get("/experiments/{experiment_id}/report", response_model=ExperimentReport)
+async def get_experiment_report(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    baseline = await session.get(TrainingJob, experiment.baseline_job_id) if experiment.baseline_job_id else None
+    experiment_payload = ExperimentRead.model_validate(experiment)
+    if principal.auth_type != "session":
+        experiment_payload = experiment_payload.model_copy(update={"final_test_metrics": None})
+    return {
+        "experiment": experiment_payload.model_dump(mode="json"),
+        "baseline_status": baseline.status if baseline else None,
+        "budget_ledger": {
+            "reserved_total_seconds": experiment.reserved_total_seconds,
+            "consumed_total_seconds": experiment.consumed_total_seconds,
+            "reserved_gpu_seconds": experiment.reserved_gpu_seconds,
+            "consumed_gpu_seconds": experiment.consumed_gpu_seconds,
+            "jobs_started": experiment.jobs_started,
+        },
+        "validation_leaderboard": await _experiment_leaderboard(session, experiment),
+        "selection_reason": experiment.selection_reason,
+        "selection_policy": experiment.selection_policy,
+        "final_test_metrics": experiment.final_test_metrics if principal.auth_type == "session" else None,
+        "final_test_visibility": (
+            "human_review_only" if principal.auth_type == "session" else "hidden_from_agent_api_key"
+        ),
+    }
+
+
+@router.get("/experiments/{experiment_id}/jobs", response_model=list[TrainingJobRead])
+async def list_experiment_jobs(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    rows = await session.scalars(
+        select(TrainingJob).where(TrainingJob.experiment_id == experiment.id).order_by(TrainingJob.created_at)
+    )
+    return list(rows.all())
+
+
+@router.post("/experiments/{experiment_id}/jobs", response_model=list[TrainingJobRead], status_code=201)
+async def submit_training_jobs(
+    experiment_id: uuid.UUID,
+    payload: TrainingJobCreate,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    service = TrainingService()
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    jobs = [TrainingJobSpec.model_validate(item) for item in payload.jobs]
+    created = await service.submit_batch(
+        session,
+        workspace_id=experiment.workspace_id,
+        experiment_id=experiment.id,
+        jobs=jobs,
+        round_number=payload.round_number,
+        submitted_by=principal.user_id,
+    )
+    await session.commit()
+    return created
+
+
+@router.get("/training/jobs/{job_id}", response_model=TrainingJobRead)
+async def get_training_job(
+    job_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    job = await _training_job_for_principal(session, job_id, principal)
+    return job
+
+
+@router.get("/training/jobs/{job_id}/metrics", response_model=list[MetricPointRead])
+async def get_training_metrics(
+    job_id: uuid.UUID,
+    split: str | None = None,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    await _training_job_for_principal(session, job_id, principal)
+    query = select(MetricPoint).where(MetricPoint.job_id == job_id)
+    if split:
+        if split == "test" and principal.auth_type != "session":
+            raise HTTPException(status_code=403, detail="test metrics are hidden from agent API keys")
+        query = query.where(MetricPoint.split == split)
+    elif principal.auth_type != "session":
+        query = query.where(MetricPoint.split != "test")
+    rows = await session.scalars(query.order_by(MetricPoint.created_at))
+    return list(rows.all())
+
+
+@router.get("/training/jobs/{job_id}/events", response_model=list[TrainingEventRead])
+async def get_training_events(
+    job_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    await _training_job_for_principal(session, job_id, principal)
+    rows = await session.scalars(
+        select(TrainingEvent).where(TrainingEvent.job_id == job_id).order_by(TrainingEvent.seq)
+    )
+    events = list(rows.all())
+    if principal.auth_type == "session":
+        return events
+    return [
+        event
+        for event in events
+        if not (
+            event.event_type == "training.metric"
+            and isinstance(event.payload, dict)
+            and event.payload.get("split") == "test"
+        )
+    ]
+
+
+@router.get("/training/jobs/{job_id}/manifest")
+async def get_training_manifest(
+    job_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    await _training_job_for_principal(session, job_id, principal)
+    attempt = await session.scalar(
+        select(TrainingAttempt)
+        .where(TrainingAttempt.job_id == job_id)
+        .order_by(TrainingAttempt.attempt.desc())
+        .limit(1)
+    )
+    return attempt.manifest if attempt else {}
+
+
+@router.get("/training/jobs/{job_id}/checkpoints", response_model=list[CheckpointRead])
+async def get_training_checkpoints(
+    job_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    await _training_job_for_principal(session, job_id, principal)
+    rows = await session.scalars(
+        select(Checkpoint).where(Checkpoint.job_id == job_id).order_by(Checkpoint.created_at)
+    )
+    return list(rows.all())
+
+
+@router.post("/training/jobs/{job_id}/cancel", response_model=TrainingJobRead)
+async def cancel_training_job(
+    job_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    job = await _training_job_for_principal(session, job_id, principal)
+    if job.status not in {"succeeded", "failed", "cancelled"}:
+        job.status = "cancelling"
+        await TrainingService().record_cancel_request(
+            session,
+            job=job,
+            actor=f"{principal.auth_type}:{principal.user_id}",
+        )
+        await session.commit()
+        try:
+            from agentforge.runtime.queue import get_redis
+
+            await get_redis().set(f"agentforge:training:cancel:{job.id}", "1", ex=86_400)
+        except Exception:
+            pass
+    await session.refresh(job)
+    return job
+
+
+@router.post("/experiments/{experiment_id}/select-best", response_model=TrainingJobRead)
+async def select_experiment_best(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    job = await TrainingService().select_best(
+        session,
+        experiment_id=experiment.id,
+        workspace_id=experiment.workspace_id,
+        actor=f"user:{principal.user_id}",
+    )
+    await session.commit()
+    return job
+
+
+@router.post("/experiments/{experiment_id}/finalize")
+async def finalize_experiment(
+    experiment_id: uuid.UUID,
+    timeout_seconds: int = Query(default=900, ge=1),
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    return await TrainingService().await_experiment_finalization(
+        experiment_id=experiment.id, timeout_seconds=timeout_seconds
+    )
+
+
+@router.get("/experiments/{experiment_id}/decisions", response_model=list[DecisionRecordRead])
+async def list_experiment_decisions(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    rows = await session.scalars(
+        select(DecisionRecord).where(DecisionRecord.experiment_id == experiment.id).order_by(DecisionRecord.created_at)
+    )
+    return list(rows.all())
+
+
+@router.get("/experiments/{experiment_id}/lineage")
+async def get_experiment_lineage(
+    experiment_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await _workspace_access(session, principal, experiment.workspace_id)
+    nodes = list(
+        (
+            await session.scalars(
+                select(LineageNode)
+                .where(LineageNode.workspace_id == experiment.workspace_id)
+                .order_by(LineageNode.created_at)
+            )
+        ).all()
+    )
+    edges = list(
+        (
+            await session.scalars(
+                select(LineageEdge)
+                .where(LineageEdge.workspace_id == experiment.workspace_id)
+                .order_by(LineageEdge.created_at)
+            )
+        ).all()
+    )
+    return {
+        "nodes": [
+            {
+                "id": str(node.id),
+                "node_type": node.node_type,
+                "ref_id": str(node.ref_id),
+                "artifact_id": str(node.artifact_id) if node.artifact_id else None,
+                "metadata": node.metadata_,
+            }
+            for node in nodes
+        ],
+        "edges": [
+            {
+                "id": str(edge.id),
+                "input_node_id": str(edge.input_node_id),
+                "output_node_id": str(edge.output_node_id),
+                "operation": edge.operation,
+                "actor_type": edge.actor_type,
+                "actor_id": edge.actor_id,
+                "created_at": edge.created_at.isoformat(),
+            }
+            for edge in edges
+        ],
+    }
+
+
+@router.get("/workspaces/{workspace_id}/model-versions", response_model=list[ModelVersionRead])
+async def list_model_versions(
+    workspace_id: uuid.UUID,
+    principal: Principal = Depends(require_workspace),
+    session: AsyncSession = Depends(database_session),
+):
+    rows = await session.scalars(
+        select(ModelVersion).where(ModelVersion.workspace_id == workspace_id).order_by(ModelVersion.created_at.desc())
+    )
+    models = list(rows.all())
+    if principal.auth_type == "session":
+        return models
+    return [
+        ModelVersionRead.model_validate(model).model_copy(update={"final_test_metrics": None})
+        for model in models
+    ]
+
+
+@router.post("/model-versions/{model_version_id}/promote", response_model=ModelVersionRead)
+async def promote_model_version(
+    model_version_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    model_version = await session.get(ModelVersion, model_version_id)
+    if model_version is None:
+        raise HTTPException(status_code=404, detail="model version not found")
+    await _workspace_access(session, principal, model_version.workspace_id)
+    require_role(principal, "owner", "admin")
+    if principal.auth_type != "session":
+        await record_rejection(
+            session,
+            workspace_id=model_version.workspace_id,
+            experiment_id=model_version.experiment_id,
+            job_id=model_version.job_id,
+            action="model.promote",
+            reason_code="human_review_required",
+            reason="Production promotion requires a human-authenticated session",
+            actor=f"api_key:{principal.user_id}",
+        )
+        await session.commit()
+        raise HTTPException(status_code=403, detail="human review is required for Production promotion")
+    previous = await session.scalars(
+        select(ModelVersion).where(
+            ModelVersion.workspace_id == model_version.workspace_id,
+            ModelVersion.name == model_version.name,
+            ModelVersion.stage == ModelStage.PRODUCTION.value,
+        )
+    )
+    for item in previous.all():
+        item.stage = ModelStage.ARCHIVED.value
+        item.archived_at = datetime.now(UTC)
+    model_version.stage = ModelStage.PRODUCTION.value
+    model_version.promoted_by = principal.user_id
+    model_version.promoted_at = datetime.now(UTC)
+    await record_decision(
+        session,
+        workspace_id=model_version.workspace_id,
+        experiment_id=model_version.experiment_id,
+        job_id=model_version.job_id,
+        data=DecisionRecordData(
+            action="model.promote",
+            result=DecisionResult.ACCEPTED,
+            reason_code="human_promotion_approved",
+            reason="Human reviewer promoted the candidate to Production",
+            actor=f"user:{principal.user_id}",
+            phase="promotion",
+            validation_metrics=model_version.validation_metrics,
+        ),
+    )
+    await session.commit()
+    await session.refresh(model_version)
+    return model_version
+
+
+@router.post("/model-versions/{model_version_id}/archive", response_model=ModelVersionRead)
+async def archive_model_version(
+    model_version_id: uuid.UUID,
+    principal: Principal = Depends(require_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    model_version = await session.get(ModelVersion, model_version_id)
+    if model_version is None:
+        raise HTTPException(status_code=404, detail="model version not found")
+    await _workspace_access(session, principal, model_version.workspace_id)
+    require_role(principal, "owner", "admin")
+    if principal.auth_type != "session":
+        raise HTTPException(status_code=403, detail="human session required")
+    model_version.stage = ModelStage.ARCHIVED.value
+    model_version.archived_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(model_version)
+    return model_version
+
+
+async def _experiment_leaderboard(
+    session: AsyncSession,
+    experiment: Experiment,
+) -> list[dict[str, Any]]:
+    jobs = list(
+        (
+            await session.scalars(
+                select(TrainingJob)
+                .where(
+                    TrainingJob.experiment_id == experiment.id,
+                    TrainingJob.status == "succeeded",
+                    TrainingJob.job_kind.in_(["baseline", "candidate", "refinement"]),
+                )
+                .order_by(TrainingJob.created_at)
+            )
+        ).all()
+    )
+    rows: list[dict[str, Any]] = []
+    for job in jobs:
+        attempt = await session.scalar(
+            select(TrainingAttempt)
+            .where(TrainingAttempt.job_id == job.id)
+            .order_by(TrainingAttempt.attempt.desc())
+            .limit(1)
+        )
+        validation = dict((attempt.metrics or {}).get("validation", {})) if attempt else {}
+        objective_value = validation.get(experiment.objective_metric)
+        rows.append(
+            {
+                "job_id": job.id,
+                "job_kind": job.job_kind,
+                "recipe_id": job.recipe_id,
+                "round_number": job.round_number,
+                "validation_metrics": validation,
+                "objective_value": float(objective_value) if objective_value is not None else None,
+                "actual_total_seconds": job.actual_total_seconds,
+                "actual_gpu_seconds": job.actual_gpu_seconds,
+                "selected": job.id == experiment.best_job_id,
+            }
+        )
+    scored = [row for row in rows if row["objective_value"] is not None]
+    unscored = [row for row in rows if row["objective_value"] is None]
+    scored.sort(
+        key=lambda row: (
+            -float(row["objective_value"])
+            if experiment.objective_direction == "maximize"
+            else float(row["objective_value"]),
+            float(row["actual_total_seconds"]),
+            str(row["job_id"]),
+        )
+    )
+    return scored + unscored
+
+
+async def _training_job_for_principal(session: AsyncSession, job_id: uuid.UUID, principal: Principal) -> TrainingJob:
+    job = await session.get(TrainingJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="training job not found")
+    await _workspace_access(session, principal, job.workspace_id)
+    return job
 
 
 async def _run_action(session, run_id, principal, action, event_type: str):

@@ -19,6 +19,7 @@ from agentforge.services.auth import bootstrap_default_admin
 from agentforge.services.runs import create_run
 from agentforge.services.skills import sync_skill_catalog
 from agentforge.services.workflows import sync_agent, sync_workflow_path
+from agentforge.training.runner import run_training_worker
 from agentforge.workflow import load_workflow, validate_workflow
 
 app = typer.Typer(help="AgentForge command line interface", no_args_is_help=True)
@@ -71,6 +72,12 @@ def worker() -> None:
         await Worker(executor).run_forever()
 
     asyncio.run(main())
+
+
+@app.command()
+def trainer() -> None:
+    """Start the isolated ML/DL training job service."""
+    asyncio.run(run_training_worker())
 
 
 @app.command()
