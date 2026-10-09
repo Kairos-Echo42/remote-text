@@ -4,6 +4,7 @@ Revision ID: 0003_embedding_1024
 Revises: 0002_model_kind
 Create Date: 2026-09-14
 """
+
 from alembic import op
 
 revision = "0003_embedding_1024"

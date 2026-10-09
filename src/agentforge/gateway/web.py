@@ -17,14 +17,26 @@ from agentforge.models import (
     AgentDefinition,
     ApiKey,
     Artifact,
+    Checkpoint,
+    Dataset,
+    DatasetVersion,
+    DecisionRecord,
+    Experiment,
     KnowledgeBase,
+    LineageEdge,
+    LineageNode,
     MCPServer,
     Membership,
     MemoryRecord,
+    MetricPoint,
     ModelProfile,
+    ModelVersion,
     NodeRun,
     Run,
     SkillRecord,
+    TrainingAttempt,
+    TrainingEvent,
+    TrainingJob,
     User,
     WorkflowDefinition,
     WorkflowVersion,
@@ -45,6 +57,18 @@ from agentforge.services.runs import (
     request_retry,
 )
 from agentforge.storage.artifacts import LocalArtifactStore
+from agentforge.training.audit import DecisionRecordData, DecisionResult, record_decision
+from agentforge.training.baselines import build_baseline_registry
+from agentforge.training.datasets import create_dataset, upload_dataset_version
+from agentforge.training.recipes import get_recipe_registry
+from agentforge.training.service import TrainingService
+from agentforge.training.types import (
+    DatasetKind,
+    ExperimentBudget,
+    ModelStage,
+    SelectionPolicy,
+    TaskType,
+)
 
 router = APIRouter()
 settings = get_settings()
@@ -792,7 +816,520 @@ async def create_workspace_user_page(
     return RedirectResponse("/app/settings", status_code=303)
 
 
+@router.get("/app/recipes", response_class=HTMLResponse)
+async def recipes_page(
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(
+        request,
+        "training/recipes.html",
+        _context(
+            request,
+            principal=principal,
+            recipes=get_recipe_registry().list(),
+            baselines=build_baseline_registry().list(),
+        ),
+    )
+
+
+@router.get("/app/datasets", response_class=HTMLResponse)
+async def datasets_page(
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    assert principal is not None
+    datasets = list(
+        (
+            await session.scalars(
+                select(Dataset).where(Dataset.workspace_id == principal.workspace_id).order_by(Dataset.name)
+            )
+        ).all()
+    )
+    versions = list(
+        (
+            await session.scalars(
+                select(DatasetVersion)
+                .where(DatasetVersion.dataset_id.in_([item.id for item in datasets] or [uuid.uuid4()]))
+                .order_by(DatasetVersion.created_at.desc())
+            )
+        ).all()
+    )
+    return templates.TemplateResponse(
+        request,
+        "training/datasets.html",
+        _context(request, principal=principal, datasets=datasets, versions=versions),
+    )
+
+
+@router.post("/app/datasets")
+async def create_dataset_page(
+    request: Request,
+    name: str = Form(...),
+    kind: str = Form("tabular"),
+    task_type: str = Form("tabular_classification"),
+    description: str = Form(""),
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    form = await request.form()
+    validate_csrf(request, str(form.get("csrf_token", "")))
+    assert principal is not None
+    await create_dataset(
+        session,
+        workspace_id=principal.workspace_id,
+        name=name,
+        kind=DatasetKind(kind),
+        task_type=TaskType(task_type),
+        description=description or None,
+        created_by=principal.user_id,
+    )
+    await session.commit()
+    return RedirectResponse("/app/datasets", status_code=303)
+
+
+@router.post("/app/datasets/{dataset_id}/versions")
+async def upload_dataset_page(
+    dataset_id: uuid.UUID,
+    request: Request,
+    file: UploadFile = File(...),
+    target_column: str = Form(""),
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    form = await request.form()
+    validate_csrf(request, str(form.get("csrf_token", "")))
+    assert principal is not None
+    dataset = await session.get(Dataset, dataset_id)
+    if dataset is None or dataset.workspace_id != principal.workspace_id:
+        raise HTTPException(status_code=404, detail="dataset not found")
+    content = await file.read()
+    if len(content) > settings.training_max_dataset_bytes:
+        raise HTTPException(status_code=413, detail="dataset exceeds configured size limit")
+    await upload_dataset_version(
+        session,
+        dataset=dataset,
+        filename=file.filename or "dataset.bin",
+        content=content,
+        artifact_store=LocalArtifactStore(),
+        target_column=target_column or None,
+    )
+    await session.commit()
+    return RedirectResponse("/app/datasets", status_code=303)
+
+
+@router.get("/app/experiments", response_class=HTMLResponse)
+async def experiments_page(
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    assert principal is not None
+    experiments = list(
+        (
+            await session.scalars(
+                select(Experiment)
+                .where(Experiment.workspace_id == principal.workspace_id)
+                .order_by(Experiment.created_at.desc())
+            )
+        ).all()
+    )
+    versions = list(
+        (
+            await session.scalars(
+                select(DatasetVersion)
+                .join(Dataset, DatasetVersion.dataset_id == Dataset.id)
+                .where(Dataset.workspace_id == principal.workspace_id, DatasetVersion.status == "ready")
+                .order_by(DatasetVersion.created_at.desc())
+            )
+        ).all()
+    )
+    return templates.TemplateResponse(
+        request,
+        "training/experiments.html",
+        _context(request, principal=principal, experiments=experiments, versions=versions),
+    )
+
+
+@router.post("/app/experiments")
+async def create_experiment_page(
+    request: Request,
+    name: str = Form(...),
+    dataset_version_id: uuid.UUID = Form(...),
+    metric: str = Form(...),
+    direction: str = Form("maximize"),
+    minimum_improvement: float = Form(0.0),
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    form = await request.form()
+    validate_csrf(request, str(form.get("csrf_token", "")))
+    assert principal is not None
+    experiment = await TrainingService().create_experiment(
+        session,
+        workspace_id=principal.workspace_id,
+        dataset_version_id=dataset_version_id,
+        name=name,
+        baseline_strategy_id=None,
+        budget=ExperimentBudget(),
+        selection_policy=SelectionPolicy(
+            validation_metric=metric,
+            direction=direction,
+            minimum_improvement=minimum_improvement,
+        ),
+        created_by=principal.user_id,
+    )
+    await session.commit()
+    return RedirectResponse(f"/app/experiments/{experiment.id}", status_code=303)
+
+
+@router.get("/app/experiments/{experiment_id}", response_class=HTMLResponse)
+async def experiment_detail_page(
+    experiment_id: uuid.UUID,
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    assert principal is not None
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None or experiment.workspace_id != principal.workspace_id:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    jobs = list(
+        (
+            await session.scalars(
+                select(TrainingJob).where(TrainingJob.experiment_id == experiment.id).order_by(TrainingJob.created_at)
+            )
+        ).all()
+    )
+    decisions = list(
+        (
+            await session.scalars(
+                select(DecisionRecord)
+                .where(DecisionRecord.experiment_id == experiment.id)
+                .order_by(DecisionRecord.created_at.desc())
+            )
+        ).all()
+    )
+    lineage_edges = list(
+        (
+            await session.scalars(
+                select(LineageEdge)
+                .where(LineageEdge.workspace_id == experiment.workspace_id)
+                .order_by(LineageEdge.created_at.desc())
+                .limit(100)
+            )
+        ).all()
+    )
+    lineage_nodes = {
+        node.id: node
+        for node in (
+            await session.scalars(
+                select(LineageNode).where(
+                    LineageNode.workspace_id == experiment.workspace_id
+                )
+            )
+        ).all()
+    }
+    return templates.TemplateResponse(
+        request,
+        "training/experiment_detail.html",
+        _context(
+            request,
+            principal=principal,
+            experiment=experiment,
+            jobs=jobs,
+            leaderboard=await _web_experiment_leaderboard(session, experiment),
+            decisions=decisions,
+            lineage_edges=lineage_edges,
+            lineage_nodes=lineage_nodes,
+        ),
+    )
+
+
+@router.post("/app/experiments/{experiment_id}/select-best")
+async def select_experiment_best_page(
+    experiment_id: uuid.UUID,
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    form = await request.form()
+    validate_csrf(request, str(form.get("csrf_token", "")))
+    assert principal is not None
+    experiment = await session.get(Experiment, experiment_id)
+    if experiment is None or experiment.workspace_id != principal.workspace_id:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    await TrainingService().select_best(
+        session, experiment_id=experiment.id, workspace_id=principal.workspace_id, actor=f"user:{principal.user_id}"
+    )
+    await session.commit()
+    return RedirectResponse(f"/app/experiments/{experiment.id}", status_code=303)
+
+
+@router.get("/app/training", response_class=HTMLResponse)
+async def training_jobs_page(
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    assert principal is not None
+    jobs = list(
+        (
+            await session.scalars(
+                select(TrainingJob)
+                .where(TrainingJob.workspace_id == principal.workspace_id)
+                .order_by(TrainingJob.created_at.desc())
+            )
+        ).all()
+    )
+    return templates.TemplateResponse(request, "training/jobs.html", _context(request, principal=principal, jobs=jobs))
+
+
+@router.get("/app/training/{job_id}", response_class=HTMLResponse)
+async def training_job_detail_page(
+    job_id: uuid.UUID,
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    assert principal is not None
+    job = await session.get(TrainingJob, job_id)
+    if job is None or job.workspace_id != principal.workspace_id:
+        raise HTTPException(status_code=404, detail="training job not found")
+    metrics = list(
+        (
+            await session.scalars(
+                select(MetricPoint).where(MetricPoint.job_id == job.id).order_by(MetricPoint.created_at)
+            )
+        ).all()
+    )
+    training_events = list(
+        (
+            await session.scalars(
+                select(TrainingEvent).where(TrainingEvent.job_id == job.id).order_by(TrainingEvent.seq)
+            )
+        ).all()
+    )
+    attempt = await session.scalar(
+        select(TrainingAttempt)
+        .where(TrainingAttempt.job_id == job.id)
+        .order_by(TrainingAttempt.attempt.desc())
+        .limit(1)
+    )
+    checkpoints = list(
+        (
+            await session.scalars(
+                select(Checkpoint).where(Checkpoint.job_id == job.id).order_by(Checkpoint.created_at)
+            )
+        ).all()
+    )
+    return templates.TemplateResponse(
+        request,
+        "training/job_detail.html",
+        _context(
+            request,
+            principal=principal,
+            job=job,
+            metrics=metrics,
+            training_events=training_events,
+            attempt=attempt,
+            checkpoints=checkpoints,
+        ),
+    )
+
+
+@router.post("/app/training/{job_id}/cancel")
+async def cancel_training_job_page(
+    job_id: uuid.UUID,
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    form = await request.form()
+    validate_csrf(request, str(form.get("csrf_token", "")))
+    assert principal is not None
+    job = await session.get(TrainingJob, job_id)
+    if (
+        job is not None
+        and job.workspace_id == principal.workspace_id
+        and job.status
+        not in {
+            "succeeded",
+            "failed",
+            "cancelled",
+        }
+    ):
+        job.status = "cancelling"
+        await TrainingService().record_cancel_request(
+            session,
+            job=job,
+            actor=f"user:{principal.user_id}",
+        )
+        await session.commit()
+        try:
+            from agentforge.runtime.queue import get_redis
+
+            await get_redis().set(f"agentforge:training:cancel:{job.id}", "1", ex=86_400)
+        except Exception:
+            pass
+    return RedirectResponse(f"/app/training/{job_id}", status_code=303)
+
+
+@router.get("/app/model-registry", response_class=HTMLResponse)
+async def model_registry_page(
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    assert principal is not None
+    models = list(
+        (
+            await session.scalars(
+                select(ModelVersion)
+                .where(ModelVersion.workspace_id == principal.workspace_id)
+                .order_by(ModelVersion.created_at.desc())
+            )
+        ).all()
+    )
+    return templates.TemplateResponse(
+        request, "training/models.html", _context(request, principal=principal, model_versions=models)
+    )
+
+
+@router.post("/app/model-registry/{model_version_id}/promote")
+async def promote_model_page(
+    model_version_id: uuid.UUID,
+    request: Request,
+    principal: Principal | None = Depends(optional_principal),
+    session: AsyncSession = Depends(database_session),
+):
+    redirect = _login_redirect(principal)
+    if redirect:
+        return redirect
+    form = await request.form()
+    validate_csrf(request, str(form.get("csrf_token", "")))
+    assert principal is not None
+    model_version = await session.get(ModelVersion, model_version_id)
+    if model_version is None or model_version.workspace_id != principal.workspace_id:
+        raise HTTPException(status_code=404, detail="model version not found")
+    if principal.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="insufficient permissions")
+    others = await session.scalars(
+        select(ModelVersion).where(
+            ModelVersion.workspace_id == principal.workspace_id,
+            ModelVersion.name == model_version.name,
+            ModelVersion.stage == ModelStage.PRODUCTION.value,
+        )
+    )
+    for item in others.all():
+        item.stage = ModelStage.ARCHIVED.value
+        item.archived_at = datetime.now(UTC)
+    model_version.stage = ModelStage.PRODUCTION.value
+    model_version.promoted_by = principal.user_id
+    model_version.promoted_at = datetime.now(UTC)
+    await record_decision(
+        session,
+        workspace_id=model_version.workspace_id,
+        experiment_id=model_version.experiment_id,
+        job_id=model_version.job_id,
+        data=DecisionRecordData(
+            action="model.promote",
+            result=DecisionResult.ACCEPTED,
+            reason_code="human_promotion_approved",
+            reason="Human reviewer promoted the candidate to Production",
+            actor=f"user:{principal.user_id}",
+            phase="promotion",
+            validation_metrics=model_version.validation_metrics,
+        ),
+    )
+    await session.commit()
+    return RedirectResponse("/app/model-registry", status_code=303)
+
+
 def _login_redirect(principal: Principal | None):
     if principal is None:
         return RedirectResponse("/login", status_code=303)
     return None
+
+
+async def _web_experiment_leaderboard(session: AsyncSession, experiment: Experiment) -> list[dict[str, Any]]:
+    jobs = list(
+        (
+            await session.scalars(
+                select(TrainingJob)
+                .where(
+                    TrainingJob.experiment_id == experiment.id,
+                    TrainingJob.status == "succeeded",
+                    TrainingJob.job_kind.in_(["baseline", "candidate", "refinement"]),
+                )
+                .order_by(TrainingJob.created_at)
+            )
+        ).all()
+    )
+    rows: list[dict[str, Any]] = []
+    for job in jobs:
+        attempt = await session.scalar(
+            select(TrainingAttempt)
+            .where(TrainingAttempt.job_id == job.id)
+            .order_by(TrainingAttempt.attempt.desc())
+            .limit(1)
+        )
+        validation = dict((attempt.metrics or {}).get("validation", {})) if attempt else {}
+        objective = validation.get(experiment.objective_metric)
+        rows.append(
+            {
+                "job": job,
+                "validation": validation,
+                "objective": float(objective) if objective is not None else None,
+                "selected": job.id == experiment.best_job_id,
+            }
+        )
+    scored = [row for row in rows if row["objective"] is not None]
+    unscored = [row for row in rows if row["objective"] is None]
+    scored.sort(
+        key=lambda row: (
+            -float(row["objective"])
+            if experiment.objective_direction == "maximize"
+            else float(row["objective"]),
+            row["job"].actual_total_seconds,
+            str(row["job"].id),
+        )
+    )
+    return scored + unscored

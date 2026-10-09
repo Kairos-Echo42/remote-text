@@ -1,6 +1,5 @@
 .git
 .env
-data
 .venv
 __pycache__
 *.pyc
@@ -10,3 +9,6 @@ __pycache__
 tests
 benchmarks
 artifacts
+data/*
+!data/wheelhouse/
+!data/wheelhouse/**

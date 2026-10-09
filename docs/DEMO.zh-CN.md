@@ -192,7 +192,38 @@ conda run --no-capture-output -n agentforge python benchmarks/recovery_check.py
 6. 替换 Worker 接管；
 7. Capability 只执行一次。
 
-## 9. 演示排障
+## 9. ML/DL 训练实验演示
+
+启动可选训练服务：
+
+```powershell
+docker compose --profile training up -d --build
+conda run -n agentforge agentforge sync
+```
+
+Web 演示步骤：
+
+1. 进入“数据集”，创建表格或图片数据集；
+2. 上传 CSV，或上传按类别目录组织的 ZIP；
+3. 查看 DatasetVersion checksum、split checksum、划分算法和随机种子；
+4. 创建 Experiment，平台自动创建 DummyClassifier/DummyRegressor Baseline；
+5. 通过 Agent 或 API 在 Recipe 允许参数范围内提交候选 Job；
+6. 查看 reserved/consumed total 与 GPU 时间、validation metrics 和 DecisionRecord；
+7. 在 Recipe 页面核对允许参数与资源范围，在实验报告页查看 validation leaderboard 和 selection reason；
+8. Selection 完成后，由人工会话查看 final test summary；Agent API Key 不返回 test metrics。
+7. 执行 validation-only selection；
+8. 等待平台 final test evaluation，test 指标只用于人工审核；
+9. 在模型仓库把 Candidate 人工提升为 Production。
+
+关键约束：
+
+- 预处理只在 train split fit，validation/test 只 transform；
+- Agent 不能访问 test metrics；
+- 候选未达到最低 improvement threshold 时保留 Baseline；
+- `required_gpu` 不可用即失败，只有 `preferred_gpu` 允许自动回退 CPU；
+- Checkpoint 用于保存和追踪，v0.2 不支持自动续训。
+
+## 10. 演示排障
 
 ### DeepSeek 返回 400
 

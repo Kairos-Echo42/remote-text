@@ -42,6 +42,19 @@ Every tool is a Capability with a name, JSON Schema, side-effect level, idempote
 
 AgentForge stores provider-neutral `ModelProfile` records. v0.1 supports `openai_compatible` and `fake`. Profiles have a `chat` or `embedding` role. The bundled environment creates `deepseek-chat` from `DEEPSEEK_API_KEY` and `dashscope-embedding` from `DASHSCOPE_API_KEY`; embeddings are stored as 1024-dimensional pgvector values.
 
+### Training Experiments
+
+ML/DL training is a first-class platform subsystem with four explicit responsibilities:
+
+- Agents make experiment decisions.
+- The Platform enforces Recipe, budget, security, validation-only selection and audit policy.
+- Trainer services own container lifecycle and execution monitoring.
+- PyTorch/sklearn containers perform the actual computation.
+
+Each Experiment has an explainable BaselineStrategy. RecipeRegistry is trusted and immutable. Dataset preprocessing fits only on the train split; validation and test data are transform-only. Model selection uses validation metrics exclusively. After selection, the Platform performs final test evaluation and stores it as metadata for human review only.
+
+ExperimentBudget tracks reserved and consumed total/GPU seconds. Admission reserves the Job hard limit atomically, then releases unused reservation and records actual consumption at completion. Artifact checksums live on Artifact nodes; Lineage edges record input/output artifacts, operation, time and actor. DecisionRecord always stores action, result, reason and timestamp, including rejected policy requests.
+
 ### Context and Data
 
 RAG ingestion extracts text, chunks documents, computes embeddings, and stores vectors in pgvector. Retrieval merges vector and lexical ranks using Reciprocal Rank Fusion. Memory is extracted after successful runs, deduplicated, reviewable, and retrieved for subsequent Agent contexts. Artifacts are stored behind an ArtifactStore interface; v0.1 uses a local volume and reserves S3-compatible extension.

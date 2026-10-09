@@ -1,0 +1,65 @@
+apiVersion: agentforge/v1
+kind: Workflow
+metadata:
+  name: agent-ml-experiment
+  version: 1.0.0
+  description: 有预算、有 Baseline、validation-only 选择、平台最终 test evaluation 的 Agent 自主实验闭环
+spec:
+  inputSchema:
+    type: object
+    properties:
+      dataset_version_id:
+        type: string
+      experiment_name:
+        type: string
+      validation_metric:
+        type: string
+    required: [dataset_version_id]
+  outputSchema:
+    type: object
+    properties:
+      experiment_id:
+        type: string
+      model_version_id:
+        type: string
+      report:
+        type: string
+  maxConcurrency: 2
+  nodes:
+    - id: dataset_profile
+      type: agent
+      uses: ml-dataset-analyst
+      with:
+        dataset_version_id: $.input.dataset_version_id
+        tool_hint: none
+    - id: experiment_agent
+      type: agent
+      uses: ml-experiment-coordinator
+      needs: [dataset_profile]
+      with:
+        dataset_version_id: $.input.dataset_version_id
+        experiment_name: $.input.experiment_name
+        validation_metric: $.input.validation_metric
+        dataset_profile: $.nodes.dataset_profile.output
+        tool_hint: none
+      timeout_seconds: 3600
+    - id: report_writer
+      type: agent
+      uses: ml-experiment-writer
+      needs: [experiment_agent]
+      with:
+        experiment_result: $.nodes.experiment_agent.output
+        tool_hint: none
+    - id: report_artifact
+      type: capability
+      uses: artifact.write
+      needs: [report_writer]
+      with:
+        name: ml-experiment-report.md
+        content: $.nodes.report_writer.output.content
+        content_type: text/markdown; charset=utf-8
+  edges: []
+  output:
+    experiment_result: $.nodes.experiment_agent.output
+    report: $.nodes.report_writer.output.content
+    artifact: $.nodes.report_artifact.output

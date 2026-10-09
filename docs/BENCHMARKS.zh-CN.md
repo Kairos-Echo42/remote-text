@@ -153,3 +153,18 @@ conda run --no-capture-output -n agentforge `
 ```
 
 当前自动测试结果：`18 passed`。
+
+
+## 训练可靠性验证
+
+在 GPU 性能基准之前，训练子系统先使用确定性 Fake Backend 验证：
+
+- 每个 Experiment 自动创建 Baseline；
+- 预处理只在 train split fit，validation/test 只 transform；
+- 模型选择只使用 validation，final test evaluation 由 Platform 在 selection 后执行；
+- `max_total_seconds` 与 `max_gpu_seconds` 的预留和实际消耗核销；
+- Recipe 参数范围拒绝与不可变 RecipeRegistry；
+- 超预算和 test metric 越权请求产生 DecisionRecord；
+- Model Bundle checksum、Checkpoint checksum 和 Lineage 完整性。
+
+v0.2.1 不提供多 GPU 或吞吐扩展基准。

@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     artifact_root: Path = Path("./data/artifacts")
     workspace_root: Path = Path("./data/workspaces")
     host_workspace_root: str | None = None
+    training_root: Path = Path("./data/training")
+    host_training_root: str | None = None
+    trainer_image: str = "agentforge-trainer:latest"
+    trainer_gpu_available: bool = True
+    git_commit: str | None = None
+    training_gpu_concurrency: int = Field(default=1, ge=1, le=8)
+    training_cpu_concurrency: int = Field(default=2, ge=1, le=32)
+    training_max_dataset_bytes: int = Field(default=2 * 1024**3, ge=1)
     web_dir: Path = Path("./web")
     example_dir: Path = Path("./examples")
     default_model: str = "fake"
@@ -68,6 +76,7 @@ class Settings(BaseSettings):
     def ensure_directories(self) -> None:
         self.artifact_root.mkdir(parents=True, exist_ok=True)
         self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self.training_root.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache(maxsize=1)

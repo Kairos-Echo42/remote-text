@@ -4,10 +4,11 @@ Revision ID: 0001_initial
 Revises:
 Create Date: 2026-09-13
 """
+
 from alembic import op
 
-from agentforge.db import Base
 from agentforge import models  # noqa: F401
+from agentforge.db import Base
 
 revision = "0001_initial"
 down_revision = None

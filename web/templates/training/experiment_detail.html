@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}实验详情 · AgentForge{% endblock %}
+{% block heading %}{{ experiment.name }}{% endblock %}
+{% block actions %}<form method="post" action="/app/experiments/{{ experiment.id }}/select-best"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn primary" type="submit">执行 Validation Selection</button></form>{% endblock %}
+{% block content %}
+<section class="metric-grid">
+  <article class="metric"><span>状态</span><strong class="status {{ experiment.status }}">{{ experiment.status }}</strong></article>
+  <article class="metric"><span>Jobs</span><strong>{{ experiment.jobs_started }}</strong></article>
+  <article class="metric"><span>总时间</span><strong>{{ experiment.consumed_total_seconds|round(1) }}s</strong></article>
+  <article class="metric"><span>GPU 时间</span><strong>{{ experiment.consumed_gpu_seconds|round(1) }}s</strong></article>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Baseline 与搜索策略</h2><span class="muted">平台受信任、版本不可变</span></div>
+  <pre>{{ experiment.baseline_strategy | tojson(indent=2) }}</pre>
+  <pre>{{ experiment.search_strategy | tojson(indent=2) }}</pre>
+  <pre>{{ experiment.selection_policy | tojson(indent=2) }}</pre>
+  <p><strong>Selection reason:</strong> <span class="mono">{{ experiment.selection_reason or '尚未完成' }}</span></p>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>预算账本</h2><span class="muted">reserved + consumed</span></div>
+  <pre>{{ experiment.budget | tojson(indent=2) }}</pre>
+  <table><tbody>
+    <tr><td>reserved_total_seconds</td><td>{{ experiment.reserved_total_seconds }}</td><td>consumed_total_seconds</td><td>{{ experiment.consumed_total_seconds }}</td></tr>
+    <tr><td>reserved_gpu_seconds</td><td>{{ experiment.reserved_gpu_seconds }}</td><td>consumed_gpu_seconds</td><td>{{ experiment.consumed_gpu_seconds }}</td></tr>
+  </tbody></table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Validation Leaderboard</h2><span class="muted">Test metrics 不参与排序</span></div>
+  <table><thead><tr><th>#</th><th>Job</th><th>类型</th><th>Round</th><th>{{ experiment.objective_metric }}</th><th>Validation</th><th>时间</th></tr></thead><tbody>
+  {% for row in leaderboard %}<tr class="{{ 'selected-row' if row.selected else '' }}"><td>{{ loop.index }}</td><td class="mono"><a href="/app/training/{{ row.job.id }}">{{ row.job.id|string|truncate(13, True, '') }}</a></td><td>{{ row.job.job_kind }}</td><td>{{ row.job.round_number }}</td><td>{{ row.objective if row.objective is not none else '—' }}</td><td class="truncate">{{ row.validation }}</td><td>{{ row.job.actual_total_seconds|round(1) }}s</td></tr>{% else %}<tr><td colspan="7"><div class="empty">暂无完成的 validation 候选。</div></td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Final Test Summary</h2><span class="muted">仅供人工审核，不作为自动决策输入</span></div>
+  <pre>{{ experiment.final_test_metrics | tojson(indent=2) if experiment.final_test_metrics else 'Selection 完成后由 Platform 生成。' }}</pre>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Training Jobs</h2><span class="muted">Agent 不可读取 Test Metrics</span></div>
+  <table><thead><tr><th>ID</th><th>类型</th><th>Recipe</th><th>Round</th><th>状态</th><th>设备</th><th>实际时间</th></tr></thead><tbody>
+  {% for job in jobs %}<tr><td><a class="mono" href="/app/training/{{ job.id }}">{{ job.id|string|truncate(13, True, '') }}</a></td><td>{{ job.job_kind }}</td><td>{{ job.recipe_id }}</td><td>{{ job.round_number }}</td><td><span class="status {{ job.status }}">{{ job.status }}</span></td><td>{{ job.device_policy }}</td><td>{{ job.actual_total_seconds|round(1) }}s</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Artifact Lineage</h2><span class="muted">checksum 位于 Artifact 节点，边只记录关系与执行者</span></div>
+  <table><thead><tr><th>Operation</th><th>Input</th><th>Output</th><th>Actor</th><th>Time</th></tr></thead><tbody>
+  {% for edge in lineage_edges %}<tr><td>{{ edge.operation }}</td><td class="mono">{{ edge.input_node_id }}</td><td class="mono">{{ edge.output_node_id }}</td><td>{{ edge.actor_type }} {{ edge.actor_id or '' }}</td><td>{{ edge.created_at.strftime('%m-%d %H:%M:%S') }}</td></tr>{% else %}<tr><td colspan="5"><div class="empty">暂无 Lineage 边。</div></td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Decision Audit</h2></div>
+  <table><thead><tr><th>时间</th><th>Actor</th><th>Action</th><th>Result</th><th>Reason</th></tr></thead><tbody>
+  {% for item in decisions %}<tr><td>{{ item.created_at.strftime('%m-%d %H:%M:%S') }}</td><td>{{ item.actor }}</td><td>{{ item.action }}</td><td>{{ item.result }}</td><td>{{ item.reason }}</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endblock %}

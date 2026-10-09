@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}训练任务 · AgentForge{% endblock %}
+{% block heading %}Training Jobs{% endblock %}
+{% block content %}
+<section class="panel">
+<table><thead><tr><th>Job</th><th>Recipe</th><th>类型</th><th>状态</th><th>GPU Policy</th><th>Fallback</th><th>实际时间</th></tr></thead><tbody>
+{% for job in jobs %}<tr><td><a class="mono" href="/app/training/{{ job.id }}">{{ job.id|string|truncate(13, True, '') }}</a></td><td>{{ job.recipe_id }}</td><td>{{ job.job_kind }}</td><td><span class="status {{ job.status }}">{{ job.status }}</span></td><td>{{ job.device_policy }}</td><td>{{ job.fallback_reason or '—' }}</td><td>{{ job.actual_total_seconds|round(1) }}s</td></tr>{% else %}<tr><td colspan="7"><div class="empty">暂无训练任务，请先启动 `training` Compose profile。</div></td></tr>{% endfor %}
+</tbody></table>
+</section>
+{% endblock %}

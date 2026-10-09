@@ -117,7 +117,17 @@ POST /api/v1/workspaces/{workspace_id}/runs
 
 `pending`、`ready`、`running`、`retry_wait`、`paused`、`succeeded`、`failed`、`skipped`、`cancelled`。
 
-## 5. SSE 事件
+## 5. 训练实验契约
+
+- 每个 Experiment 必须绑定不可变 BaselineStrategy，默认使用 DummyClassifier/DummyRegressor。
+- 预处理只能在 train split 上 fit；validation/test 只能 transform。
+- 模型选择只读取 validation 指标；final test evaluation 在候选确定后由 Platform 执行，并且不进入 Agent 上下文。
+- `ExperimentBudget` 同时维护总时间和 GPU 时间的 reserved/consumed 账本，提交时事务性预留，结束后按实际消耗核销。
+- RecipeRegistry 是平台受信任且不可变的组件，Agent 不能创建、修改或注册 Recipe。
+- Artifact checksum 存在于 Artifact 节点；Lineage 边记录输入/输出 Artifact、操作、时间和执行者。
+- `DecisionRecord` 记录接受和拒绝的请求，`action`、`result`、`reason`、`timestamp` 为核心必填字段。
+
+## 6. SSE 事件
 
 使用方式：
 
@@ -149,7 +159,7 @@ source.addEventListener('node.succeeded', event => {
 
 常见事件：`run.queued`、`run.started`、`node.ready`、`node.started`、`node.succeeded`、`node.failed`、`node.recovered`、`tool.started`、`tool.succeeded`、`run.succeeded`、`run.failed`、`run.cancelled`。
 
-## 6. 模型配置
+## 7. 模型配置
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -174,7 +184,7 @@ source.addEventListener('node.succeeded', event => {
 - `chat`：Agent 推理。
 - `embedding`：RAG 和 Memory。
 
-## 7. MCP、Skill 与知识库
+## 8. MCP、Skill 与知识库
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -185,7 +195,7 @@ source.addEventListener('node.succeeded', event => {
 
 知识库文档支持 Markdown、文本、PDF、CSV 和 JSON。索引使用工作区默认 `embedding` Profile。
 
-## 8. Memory 与 Artifact
+## 9. Memory 与 Artifact
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -202,14 +212,35 @@ Artifact 查询可附加 `run_id`：
 GET /api/v1/workspaces/{workspace_id}/artifacts?run_id={run_id}
 ```
 
-## 9. API Key
+## 10. API Key
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/v1/workspaces/{workspace_id}/api-keys` | Key 元数据列表 |
 | POST | `/api/v1/workspaces/{workspace_id}/api-keys` | 创建 Key，明文只返回一次 |
+| GET/POST | `/api/v1/workspaces/{workspace_id}/datasets` | 创建/查询 ML 数据集 |
+| GET/POST | `/api/v1/datasets/{dataset_id}/versions` | 上传不可变 DatasetVersion，生成 split 与 checksum |
+| GET | `/api/v1/workspaces/{workspace_id}/training/recipes` | 受信任 Recipe 与合法参数范围 |
+| GET | `/api/v1/workspaces/{workspace_id}/training/baselines` | 受信任 BaselineStrategy 列表 |
+| GET/POST | `/api/v1/workspaces/{workspace_id}/experiments` | 创建/查询训练实验与预算 |
+| GET | `/api/v1/experiments/{experiment_id}/report` | 预算、Baseline、validation leaderboard 与 final test 人工报告 |
+| GET | `/api/v1/experiments/{experiment_id}/leaderboard` | 仅使用 validation 指标排序 |
+| GET | `/api/v1/experiments/{experiment_id}/budget-reservations` | Job 级预算预留与核销记录 |
+| GET/POST | `/api/v1/experiments/{experiment_id}/jobs` | 查询/提交预算内 TrainingJob |
+| POST | `/api/v1/experiments/{experiment_id}/select-best` | 仅使用 validation 指标执行模型选择 |
+| POST | `/api/v1/experiments/{experiment_id}/finalize` | 等待平台 final test evaluation |
+| GET | `/api/v1/experiments/{experiment_id}/decisions` | 查询 DecisionRecord 审计 |
+| GET | `/api/v1/training/jobs/{job_id}` | TrainingJob 状态与资源账本 |
+| GET | `/api/v1/training/jobs/{job_id}/metrics` | 指标；test 仅人工会话可见，Agent API Key 被拒绝 |
+| GET | `/api/v1/training/jobs/{job_id}/events` | 训练生命周期事件 |
+| GET | `/api/v1/training/jobs/{job_id}/manifest` | Reproducibility Manifest |
+| GET | `/api/v1/training/jobs/{job_id}/checkpoints` | Checkpoint、checksum 与 validation 元数据 |
+| POST | `/api/v1/training/jobs/{job_id}/cancel` | SIGTERM 宽限后 SIGKILL 的优雅取消 |
+| GET | `/api/v1/workspaces/{workspace_id}/model-versions` | Candidate/Production/Archived 模型仓库 |
+| POST | `/api/v1/model-versions/{model_version_id}/promote` | 人工提升，不使用 test 指标排序 |
+| POST | `/api/v1/model-versions/{model_version_id}/archive` | 归档模型版本 |
 
-## 10. cURL 示例
+## 11. cURL 示例
 
 ```bash
 curl -X POST "http://localhost:8000/api/v1/workspaces/WORKSPACE_ID/runs" \

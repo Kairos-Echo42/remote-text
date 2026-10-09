@@ -14,6 +14,9 @@ Report vulnerabilities privately to the project maintainer. Do not include secre
 - Redacted event and log payloads.
 - Docker Sandbox: non-root, read-only root, resource limits, no network by default.
 - MCP stdio and Python Skills are trusted-code boundaries requiring workspace administrator access.
+- Training Recipes are trusted, immutable platform code. Agents may only select registered Recipes and bounded parameters.
+- Training containers run without network by default and mount datasets read-only.
+- Validation/test preprocessing never fits; test metrics are restricted to Platform final-evaluation metadata.
 
 ## Production Requirements
 

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}模型仓库 · AgentForge{% endblock %}
+{% block heading %}Model Registry{% endblock %}
+{% block content %}
+<section class="panel">
+<div class="panel-head"><h2>Model Versions</h2><span class="muted">Test metrics 仅作为最终评估元数据，不参与 Promotion</span></div>
+<table><thead><tr><th>模型</th><th>版本</th><th>阶段</th><th>Recipe</th><th>Validation（选择依据）</th><th>Final Test（仅人工审核）</th><th>ZIP SHA-256</th><th>操作</th></tr></thead><tbody>
+{% for model in model_versions %}<tr><td>{{ model.name }}</td><td>{{ model.version }}</td><td><span class="status {{ model.stage }}">{{ model.stage }}</span></td><td>{{ model.recipe_id }}</td><td class="truncate">{{ model.validation_metrics }}</td><td class="truncate">{{ model.final_test_metrics }}</td><td class="mono">{{ model.bundle_sha256[:12] }}</td><td>{% if model.stage == 'candidate' %}<form method="post" action="/app/model-registry/{{ model.id }}/promote"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">人工提升</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="8"><div class="empty">暂无候选模型。</div></td></tr>{% endfor %}
+</tbody></table>
+</section>
+{% endblock %}

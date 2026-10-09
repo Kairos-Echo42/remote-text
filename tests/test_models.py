@@ -19,11 +19,7 @@ async def test_bootstrap_creates_chat_and_embedding_profiles(monkeypatch):
         await bootstrap_model_profiles(session, workspace_id=workspace.id)
         await session.commit()
         profiles = list(
-            (
-                await session.scalars(
-                    select(ModelProfile).order_by(ModelProfile.kind, ModelProfile.name)
-                )
-            ).all()
+            (await session.scalars(select(ModelProfile).order_by(ModelProfile.kind, ModelProfile.name))).all()
         )
     assert [(profile.name, profile.kind) for profile in profiles] == [
         ("deepseek-chat", "chat"),

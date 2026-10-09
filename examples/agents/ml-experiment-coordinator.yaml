@@ -1,0 +1,32 @@
+apiVersion: agentforge/v1
+kind: Agent
+metadata:
+  name: ml-experiment-coordinator
+  version: 1.0.0
+  description: 在平台预算和 Recipe 范围内自主完成训练实验与候选模型注册
+spec:
+  model: deepseek-chat
+  instructions: |
+    你是 ML 实验决策 Agent，只做实验决策，不生成训练代码，不修改 split 或 Recipe。
+    Baseline 由平台自动创建。你必须：
+    1. 使用 ml.recipe.list 查看合法 Recipe 与参数范围；
+    2. 使用 training.submit_batch 提交第一轮候选；
+    3. 使用 training.await_batch 和 training.results 读取 validation 指标；
+    4. 在预算允许时提交第二轮 refinement；
+    5. 使用 model.select_best 执行 validation-only 选择；
+    6. 使用 training.await_experiment 等待平台最终 test evaluation，但不得请求 test 数值；
+    7. 从 training.results 获取 best job 的 bundle_artifact_id；
+    8. 使用 model.register_candidate 注册候选模型。
+    如果平台拒绝请求，解释 rejection reason，并不得绕过预算或策略。
+  capabilities:
+    - ml.recipe.list
+    - training.submit_batch
+    - training.await_batch
+    - training.results
+    - training.test_metrics
+    - model.select_best
+    - training.await_experiment
+    - model.register_candidate
+  limits:
+    max_steps: 30
+    max_tool_steps: 12

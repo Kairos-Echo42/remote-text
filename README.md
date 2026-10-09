@@ -13,6 +13,7 @@ AgentForge is an asynchronous, Python-based multi-agent runtime platform. It com
 | Agents | LangGraph plan-act-observe loop, typed capabilities, token and step budgets |
 | Models | OpenAI-compatible Chat Completions and Embeddings, plus deterministic Fake providers |
 | Context | Hybrid pgvector + lexical RAG, citation markers, durable reviewable Memory |
+| Training | Recipe-driven sklearn/PyTorch experiments, budgets, baseline strategies, validation-only selection, checkpoints, model registry |
 | Extensibility | MCP stdio/Streamable HTTP, declarative and code-backed Skills |
 | Execution | Docker Sandbox with non-root, read-only root, resource limits, network disabled by default |
 | Gateway | Native REST API, SSE replay, workspace API keys, OpenAPI |
@@ -108,6 +109,27 @@ docker compose up -d --build gateway worker scheduler
 
 If the full Compose stack is already running, use the Web workbench or API to create runs. `agentforge demo` automatically uses Redis DB 1 for its in-process Scheduler/Worker so it can coexist with the Compose stack.
 
+## Training Profile
+
+The ML/DL training subsystem is optional and uses a separate CUDA-capable image:
+
+```powershell
+docker compose --profile training up -d --build
+# Or, from a clean Windows checkout:
+.\scripts\bootstrap.ps1 -WithTraining
+```
+
+It provides:
+
+- tabular classification/regression with sklearn baselines and PyTorch MLP;
+- small image classification with a from-scratch CNN;
+- mandatory explainable baselines through trusted BaselineStrategy implementations;
+- platform-enforced job, round, wall-clock and GPU budgets with reservation accounting;
+- train-only preprocessing, validation-only selection and platform-only final test evaluation;
+- DatasetVersion/split/Recipe/config/image/environment reproducibility manifests;
+- immutable RecipeRegistry, Artifact Lineage, Checkpoint checksums and candidate model bundles;
+- `required_gpu`, `preferred_gpu` and `cpu_only` execution policies.
+
 ## CLI
 
 ```text
@@ -148,6 +170,7 @@ conda run --no-capture-output -n agentforge pytest -q -p no:cacheprovider
 English:
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Training](docs/TRAINING.md)
 - [API](docs/API.md)
 - [Demo guide](docs/DEMO.md)
 - [Benchmark results](docs/BENCHMARKS.md)

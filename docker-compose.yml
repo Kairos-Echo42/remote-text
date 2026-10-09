@@ -37,6 +37,8 @@ services:
       AGENTFORGE_REDIS_URL: redis://redis:6379/0
       AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
       AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+      AGENTFORGE_TRAINING_ROOT: /app/data/training
+      AGENTFORGE_HOST_TRAINING_ROOT: ${AGENTFORGE_HOST_TRAINING_ROOT:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,6 +52,8 @@ services:
       AGENTFORGE_REDIS_URL: redis://redis:6379/0
       AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
       AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+      AGENTFORGE_TRAINING_ROOT: /app/data/training
+      AGENTFORGE_HOST_TRAINING_ROOT: ${AGENTFORGE_HOST_TRAINING_ROOT:-}
     ports:
       - "8000:8000"
     volumes:
@@ -72,6 +76,8 @@ services:
       AGENTFORGE_REDIS_URL: redis://redis:6379/0
       AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
       AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+      AGENTFORGE_TRAINING_ROOT: /app/data/training
+      AGENTFORGE_HOST_TRAINING_ROOT: ${AGENTFORGE_HOST_TRAINING_ROOT:-}
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -94,6 +100,35 @@ services:
       AGENTFORGE_REDIS_URL: redis://redis:6379/0
       AGENTFORGE_WORKSPACE_ROOT: /app/data/workspaces
       AGENTFORGE_HOST_WORKSPACE_ROOT: ${AGENTFORGE_HOST_WORKSPACE_ROOT:-}
+      AGENTFORGE_TRAINING_ROOT: /app/data/training
+      AGENTFORGE_HOST_TRAINING_ROOT: ${AGENTFORGE_HOST_TRAINING_ROOT:-}
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  trainer:
+    image: agentforge-trainer:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.trainer
+      args:
+        TRAINER_BASE_IMAGE: ${AGENTFORGE_TRAINER_BASE_IMAGE:-python:3.12-slim}
+    command: ["agentforge", "trainer"]
+    profiles: ["training"]
+    env_file: .env
+    environment:
+      AGENTFORGE_DATABASE_URL: postgresql+asyncpg://agentforge:agentforge@postgres:5432/agentforge
+      AGENTFORGE_REDIS_URL: redis://redis:6379/0
+      AGENTFORGE_TRAINING_ROOT: /app/data/training
+      AGENTFORGE_HOST_TRAINING_ROOT: ${AGENTFORGE_HOST_TRAINING_ROOT:-}
+      AGENTFORGE_TRAINER_IMAGE: agentforge-trainer:latest
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock

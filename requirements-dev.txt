@@ -4,7 +4,7 @@
 #
 #    pip-compile --no-index --output-file=requirements-dev.txt --strip-extras requirements-dev.in
 #
---index-url https://pypi.mirrors.ustc.edu.cn/simple/
+--index-url https://pypi.org/simple/
 
 aiosqlite==0.22.1
     # via -r requirements-dev.in

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}训练任务详情 · AgentForge{% endblock %}
+{% block heading %}Training Job{% endblock %}
+{% block actions %}{% if job.status not in ['succeeded','failed','cancelled'] %}<form method="post" action="/app/training/{{ job.id }}/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn danger" type="submit">优雅取消</button></form>{% endif %}{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>{{ job.recipe_id }}</h2><span class="status {{ job.status }}">{{ job.status }}</span></div>
+  <dl class="run-header"><div><dt>Job ID</dt><dd class="mono">{{ job.id }}</dd></div><div><dt>Round</dt><dd>{{ job.round_number }}</dd></div><div><dt>GPU Policy</dt><dd>{{ job.device_policy }}</dd></div><div><dt>Image Digest</dt><dd class="mono">{{ job.image_digest or '—' }}</dd></div></dl>
+  {% if job.fallback_reason %}<div class="alert">{{ job.fallback_reason }}</div>{% endif %}
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Metrics</h2><span class="muted">validation 对 Agent 可见，test 仅供人工审核</span></div>
+  <table><thead><tr><th>Split</th><th>Metric</th><th>Step</th><th>Value</th></tr></thead><tbody>
+  {% for metric in metrics %}<tr><td><span class="tag">{{ metric.split }}</span></td><td>{{ metric.name }}</td><td>{{ metric.step }}</td><td>{{ metric.value }}</td></tr>{% else %}<tr><td colspan="4"><div class="empty">暂无指标。</div></td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Reproducibility Manifest</h2><span class="muted">Dataset / Recipe / config / runtime / hardware</span></div>
+  <pre>{{ attempt.manifest | tojson(indent=2) if attempt and attempt.manifest else '任务完成后生成。' }}</pre>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Checkpoints</h2><span class="muted">v0.2 只追踪，不自动恢复训练</span></div>
+  <table><thead><tr><th>Epoch</th><th>Metric</th><th>Value</th><th>Checksum</th><th>状态</th></tr></thead><tbody>
+  {% for checkpoint in checkpoints %}<tr><td>{{ checkpoint.epoch if checkpoint.epoch is not none else '—' }}</td><td>{{ checkpoint.validation_metric or '—' }}</td><td>{{ checkpoint.validation_value if checkpoint.validation_value is not none else '—' }}</td><td class="mono">{{ checkpoint.checksum[:16] }}</td><td>{{ checkpoint.status }}</td></tr>{% else %}<tr><td colspan="5"><div class="empty">暂无 Checkpoint。</div></td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Training Events</h2></div>
+  <ol class="event-stream">{% for event in training_events %}<li><span class="event-seq">#{{ event.seq }}</span><div><strong>{{ event.event_type }}</strong><p>{{ event.payload }}</p></div></li>{% endfor %}</ol>
+</section>
+{% endblock %}
